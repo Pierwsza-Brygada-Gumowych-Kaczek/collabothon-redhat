@@ -1,40 +1,38 @@
-import { Component, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { ChatService, Message } from './chat.service';
+import { AfterViewInit, Component, ElementRef, inject, viewChild } from '@angular/core';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { BankService } from './bank.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [FormsModule],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
-export class AppComponent {
-  private readonly chat = inject(ChatService);
+export class AppComponent implements AfterViewInit {
+  readonly bank = inject(BankService);
+  private readonly duck = viewChild.required<ElementRef<HTMLVideoElement>>('duck');
 
-  readonly messages = signal<Message[]>([]);
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
-  input = '';
+  readonly nav = [
+    { path: '/', label: 'Overview', exact: true },
+    { path: '/liquidity', label: 'Liquidity', exact: false },
+    { path: '/investments', label: 'Investments', exact: false },
+    { path: '/tax', label: 'Tax', exact: false },
+    { path: '/fx', label: 'FX hedging', exact: false },
+    { path: '/transactions', label: 'Transactions', exact: false },
+    { path: '/analytics', label: 'Analytics', exact: false },
+  ];
 
-  send(): void {
-    const text = this.input.trim();
-    if (!text || this.loading()) return;
-
-    this.messages.update((m) => [...m, { role: 'user', content: text }]);
-    this.input = '';
-    this.loading.set(true);
-    this.error.set(null);
-
-    this.chat.send(this.messages()).subscribe({
-      next: (res) => {
-        this.messages.update((m) => [...m, res.message]);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Nie udało się połączyć z modelem.');
-        this.loading.set(false);
-      },
-    });
+  ngAfterViewInit(): void {
+    // Angular does not set the `muted` property from the template attribute, and browsers only
+    // autoplay muted videos — so set it explicitly.
+    const v = this.duck().nativeElement;
+    v.muted = true;
+    v.defaultMuted = true;
+    const play = () => v.play().catch(() => undefined);
+    play();
+    // If the browser still blocks it (e.g. energy saver), start on the first user interaction.
+    document.addEventListener('pointerdown', play, { once: true });
+    document.addEventListener('keydown', play, { once: true });
   }
 }

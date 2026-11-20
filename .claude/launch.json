@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "C:/Users/zuz3c/collabothon-redhat/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "C:/Users/zuz3c/collabothon-redhat/backend", "--port", "8001"],
+      "cwd": "C:/Users/zuz3c/collabothon-redhat/backend",
+      "port": 8001,
+      "autoPort": false
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/zuz3c/collabothon-redhat/frontend", "start"],
+      "cwd": "C:/Users/zuz3c/collabothon-redhat/frontend",
+      "port": 4200
+    },
+    {
+      "name": "frontend-verify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["ng", "serve", "--port", "4300", "--proxy-config", "C:/Users/zuz3c/AppData/Local/Temp/claude/4f523fdb810ec4cc/869fabc7-6b81-4e35-bd41-e2ba7e51cd23/scratchpad/proxy-8001.json"],
+      "cwd": "C:/Users/zuz3c/collabothon-redhat/frontend",
+      "port": 4300
+    }
+  ]
+}

@@ -1,20 +1,39 @@
+<header class="topbar">
+  <a routerLink="/" class="brand">
+    <video #duck class="logo" src="/duck.mp4" autoplay loop muted playsinline preload="auto"
+           disablepictureinpicture aria-hidden="true"></video>
+    DuckBank <span class="tag">Business</span>
+  </a>
+  @if (bank.aiStatus(); as s) {
+    <button class="ai-pill" [class.ok]="s.reachable && s.model_found"
+            [class.demo]="!(s.reachable && s.model_found) && s.demo_fallback" (click)="bank.loadAiStatus()"
+            [title]="s.error || ('Connected to ' + s.url)">
+      <span class="ai-dot"></span>
+      {{ s.reachable && s.model_found ? 'AI connected · ' + s.model : (s.demo_fallback ? 'Demo mode · AI not connected' : 'AI offline') }}
+    </button>
+  }
+  @if (bank.user(); as u) {
+    <div class="user">
+      <div class="who">
+        <strong>{{ u.name }}</strong>
+        <small>{{ u.business }} · {{ u.segment }}</small>
+      </div>
+      <div class="avatar" title="Signed in automatically (demo account)">{{ u.initials }}</div>
+    </div>
+  }
+</header>
+
+<nav class="tabs">
+  @for (n of nav; track n.path) {
+    <a [routerLink]="n.path" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: n.exact }">
+      {{ n.label }}
+    </a>
+  }
+</nav>
+
 <main>
-  <h1>OpenShift AI Chat</h1>
-
-  <section class="messages">
-    @for (m of messages(); track $index) {
-      <div class="msg" [class.user]="m.role === 'user'">{{ m.content }}</div>
-    }
-    @if (loading()) {
-      <div class="msg">…</div>
-    }
-    @if (error()) {
-      <div class="error">{{ error() }}</div>
-    }
-  </section>
-
-  <form (ngSubmit)="send()">
-    <input name="input" [(ngModel)]="input" placeholder="Napisz wiadomość…" autocomplete="off" />
-    <button type="submit" [disabled]="loading()">Wyślij</button>
-  </form>
+  @if (bank.error(); as e) {
+    <div class="alert">{{ e }}</div>
+  }
+  <router-outlet />
 </main>
