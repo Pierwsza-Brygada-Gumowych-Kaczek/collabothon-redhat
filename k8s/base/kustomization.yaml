@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# namespace/projekt ustaw w overlay lub przez `-n`
+resources:
+  - configmap.yaml
+  - secret.yaml
+  - backend.yaml
+  - frontend.yaml
+
+images:
+  - name: backend
+    newName: quay.io/YOUR_ORG/ai-app-backend
+    newTag: latest
+  - name: frontend
+    newName: quay.io/YOUR_ORG/ai-app-frontend
+    newTag: latest
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ai-app
