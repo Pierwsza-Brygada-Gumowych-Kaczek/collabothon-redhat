@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.routers.account import get_today
+from tests.conftest import logged_in
 
 MODEL_URL = "http://localhost:8080/v1"
 
@@ -25,12 +26,12 @@ def model_down():
 
 
 def test_me_returns_dummy_user():
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         assert client.get("/api/me").json()["name"] == "Vincenzo Amalfi"
 
 
 def test_overview_matches_sample_data():
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         ov = client.get("/api/account/overview").json()
     assert round(ov["balance"], 0) == 33266  # closing balance from the scenario sheet
     assert ov["kpis"]["min_balance"] < -20000  # dip after the June shutdown
@@ -39,7 +40,7 @@ def test_overview_matches_sample_data():
 
 
 def test_transactions_newest_first_and_filter():
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         page = client.get("/api/account/transactions?limit=5").json()
         rent = client.get("/api/account/transactions?category=Rent").json()
     assert page["total"] == 1125
@@ -50,7 +51,7 @@ def test_transactions_newest_first_and_filter():
 def test_budgets_progress_and_reset():
     app = create_app()
     app.dependency_overrides[get_today] = lambda: date(2026, 11, 20)
-    with TestClient(app) as client:
+    with logged_in(app) as client:
         budgets = {b["id"]: b for b in client.get("/api/budgets").json()}
     assert set(budgets) == {"food", "beverages", "utilities", "rent"}
     rent = budgets["rent"]
@@ -74,7 +75,7 @@ def test_insights_from_model_normalises_values():
         ],
     }
     route = respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/insights?refresh=true").json()
     p = r["proposals"][0]
     assert r["source"] == "openshift-ai" and r["error"] is None
@@ -86,7 +87,7 @@ def test_insights_from_model_normalises_values():
 
 
 def test_insights_without_model_returns_error_and_no_proposals(model_down):
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/insights?refresh=true").json()
     assert r["source"] == "unavailable"
     assert "Cannot connect" in r["error"]
@@ -98,7 +99,7 @@ def test_invalid_model_json_is_an_error_not_cached():
     route = respx.post(f"{MODEL_URL}/chat/completions").mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": "Sorry, I cannot help."}}]})
     )
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         first = client.get("/api/insights").json()
         client.get("/api/insights")
     assert first["source"] == "unavailable" and "JSON" in first["error"]
@@ -108,7 +109,7 @@ def test_invalid_model_json_is_an_error_not_cached():
 @respx.mock
 def test_model_auth_error_is_explained():
     respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=httpx.Response(401))
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/insights?refresh=true").json()
     assert "OPENSHIFT_AI_TOKEN" in r["error"]
 
@@ -124,7 +125,7 @@ def test_income_tax_formula_known_points():
 
 
 def test_tax_without_model_keeps_facts_and_schedule_but_no_tips(model_down):
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/tax-tips?refresh=true").json()
     f = r["facts"]
     assert r["source"] == "unavailable" and r["error"] and r["tips"] == []
@@ -140,7 +141,7 @@ def test_tax_tips_from_model():
     content = {"summary": "OK", "tips": [{"title": "Deduction", "saving_min_eur": "5,000", "saving_max_eur": 2000,
                                           "difficulty": "HARD", "steps": "one step"}]}
     respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/tax-tips?refresh=true").json()
     t = r["tips"][0]
     assert r["source"] == "openshift-ai" and r["schedule"]
@@ -151,7 +152,7 @@ def test_tax_tips_from_model():
 
 
 def test_liquidity_forecast_is_calculated_even_without_model(model_down):
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/liquidity?days=90&refresh=true").json()
         r_tax = client.get("/api/liquidity?days=180&include_tax=true&refresh=true").json()
     assert r["error"] and r["facilities"] == [] and r["summary"] == ""
@@ -160,6 +161,11 @@ def test_liquidity_forecast_is_calculated_even_without_model(model_down):
     assert any(s["label"] == "Rent" and s["date"] == "2026-01-01" for s in r["scheduled"])
     assert not any("Swiss" in s["label"] for s in r["scheduled"])  # instalments have ended
     assert r["overdraft_cost_last_year"] > 0
+    assert all(p["expected_in"] > 0 for p in r["forecast"])  # January card revenue
+    by_wd = {}
+    for p in r["forecast"][:14]:
+        by_wd[date.fromisoformat(p["date"]).weekday()] = p["expected_in"]
+    assert by_wd[0] > 3 * by_wd[2]  # Monday card payouts far above a Wednesday
     assert r_tax["min_balance"] < r["min_balance"]  # the tax back-payment makes it worse
     assert any("back-payment" in s["label"] for s in r_tax["scheduled"])
 
@@ -170,7 +176,7 @@ def test_liquidity_facilities_from_model():
         {"title": "Credit line", "product": "Business credit line", "limit_eur": "30,000",
          "interest_min_pct": 11, "interest_max_pct": 8, "steps": ["apply"]}]}
     respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/liquidity?days=180&refresh=true").json()
     f = r["facilities"][0]
     assert r["source"] == "openshift-ai" and r["summary"] == "Tight in June."
@@ -182,7 +188,7 @@ def test_liquidity_facilities_from_model():
 
 
 def test_fx_exposure_calculated_without_model(model_down):
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/fx?refresh=true").json()
     e = r["exposures"][0]
     assert r["error"] and r["hedges"] == [] and r["risk_level"] is None
@@ -196,7 +202,7 @@ def test_fx_hedges_from_model():
     content = {"summary": "CHF risk.", "risk_level": "High",
                "hedges": [{"title": "Forward", "product": "Commerzbank FX forward", "notional": "25,000"}]}
     respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         r = client.get("/api/fx?refresh=true").json()
     assert r["risk_level"] == "high" and r["hedges"][0]["notional"] == 25000
 
@@ -209,7 +215,7 @@ def test_ai_status_reports_missing_model():
     respx.get(f"{MODEL_URL}/models").mock(
         return_value=httpx.Response(200, json={"data": [{"id": "llama-3"}]})
     )
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         s = client.get("/api/ai/status").json()
     assert s["reachable"] and not s["model_found"]
     assert s["available_models"] == ["llama-3"] and "OPENSHIFT_AI_MODEL" in s["error"]
@@ -229,7 +235,7 @@ def demo_mode(monkeypatch, model_down):
 
 
 def test_demo_mode_returns_labelled_demo_recommendations(demo_mode):
-    with TestClient(create_app()) as client:
+    with logged_in(create_app()) as client:
         ins = client.get("/api/insights?refresh=true").json()
         tx = client.get("/api/tax-tips?refresh=true").json()
         liq = client.get("/api/liquidity?days=180&include_tax=true&refresh=true").json()
@@ -241,3 +247,85 @@ def test_demo_mode_returns_labelled_demo_recommendations(demo_mode):
     assert liq["facilities"] and liq["summary"]
     assert fx["hedges"] and fx["risk_level"] == "medium"
     assert status["demo_fallback"] is True
+
+
+def test_forecast_endpoint_is_calculated_without_ai():
+    with logged_in(create_app()) as client:
+        r = client.get("/api/forecast?days=200").json()
+    assert r["as_of"] == "2025-12-31" and len(r["forecast"]) == 200
+    assert r["scheduled"] and all("expected_in" in p for p in r["forecast"])
+
+
+# --- Budgets: add / delete ---
+
+
+@pytest.fixture
+def budget_app():
+    app = create_app()
+    app.dependency_overrides[get_today] = lambda: date(2026, 11, 20)
+    return app
+
+
+def test_add_and_delete_budget(budget_app):
+    with logged_in(budget_app) as client:
+        opts = client.get("/api/budgets/options").json()
+        assert any(o["value"] == "Payroll" for o in opts["categories"])
+        assert any("La Vino" in o["value"] for o in opts["merchants"])
+
+        r = client.post("/api/budgets", json={"name": "Staff wages", "category": "Payroll", "limit": 9000})
+        assert r.status_code == 201
+        b = r.json()
+        assert b["id"] == "staff-wages" and b["limit"] == 9000 and b["custom_limit"] is True
+        assert b["spent"] == 0 and b["remaining"] == 9000  # salaries are paid on the 28th, "today" is the 20th
+        ids = [x["id"] for x in client.get("/api/budgets").json()]
+        assert ids[-1] == "staff-wages" and len(ids) == 5
+
+        assert client.delete("/api/budgets/staff-wages").status_code == 204
+        assert client.delete("/api/budgets/staff-wages").status_code == 404
+        assert len(client.get("/api/budgets").json()) == 4
+
+
+def test_budget_needs_something_to_track_and_suggests_limit(budget_app):
+    with logged_in(budget_app) as client:
+        assert client.post("/api/budgets", json={"name": "Nothing"}).status_code == 422
+        r = client.post("/api/budgets", json={"name": "Market", "merchants": ["Wholesale Market"]}).json()
+    assert r["custom_limit"] is False and r["limit"] > 0
+
+
+# --- Login & persistence ---
+
+
+def test_requires_login():
+    with TestClient(create_app()) as client:
+        assert client.get("/api/account/overview").status_code == 401
+        assert client.get("/api/budgets").status_code == 401
+        bad = client.post("/api/auth/login", json={"username": "demo", "password": "nope"})
+        assert bad.status_code == 401
+
+
+def test_login_logout_and_budgets_survive_logout():
+    app = create_app()
+    with TestClient(app) as client:
+        r = client.post("/api/auth/login", json={"username": "Demo ", "password": "demo"})
+        assert r.status_code == 200 and r.json()["name"] == "Vincenzo Amalfi"
+        assert "duckbank_session" in client.cookies
+        client.post("/api/budgets", json={"name": "Taxes", "category": "Taxes", "limit": 2000})
+        assert client.post("/api/auth/logout").status_code == 204
+        assert client.get("/api/me").status_code == 401
+
+        client.post("/api/auth/login", json={"username": "demo", "password": "demo"})
+        names = [b["name"] for b in client.get("/api/budgets").json()]
+        assert "Taxes" in names  # stored in the database, not in the session
+
+
+def test_demo_user_and_transactions_are_stored_in_database():
+    from sqlalchemy import func, select
+
+    from app.db import TransactionRow, UserRow, new_session
+
+    with logged_in(create_app()):
+        with new_session() as db:
+            assert db.scalar(select(func.count()).select_from(UserRow)) == 1
+            assert db.scalar(select(func.count()).select_from(TransactionRow)) == 1125
+            user = db.scalar(select(UserRow))
+            assert user.password_hash.startswith("pbkdf2_sha256$") and "demo" not in user.password_hash

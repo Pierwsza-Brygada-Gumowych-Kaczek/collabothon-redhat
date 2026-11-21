@@ -40,7 +40,13 @@ Każdy agent: **fakty** (saldo, prognoza, kwoty podatków, ekspozycja CHF) liczo
 
 Podłączenie modelu: uzupełnij `OPENSHIFT_AI_URL`, `OPENSHIFT_AI_MODEL`, `OPENSHIFT_AI_TOKEN` w `backend/.env` (opis w `.env.example`), zrestartuj backend i sprawdź `GET /api/ai/status` (w UI: znacznik „AI connected / AI offline” w nagłówku).
 
-## Lokalnie
+## Konfiguracja
+
+Wszystkie ustawienia backendu są w `backend/.env` (pełna lista kluczy: `backend/.env.example`, kod: `backend/app/config.py`). Zmienne środowiskowe (docker compose, ConfigMap/Secret w Kubernetes) mają pierwszeństwo przed `.env`. Dane logowania do PostgreSQL dla docker compose: `.env` w katalogu głównym (wzór: `.env.example`, domyślnie `duckbank`/`duckbank`).
+
+Baza danych przechowuje użytkowników, sesje logowania, transakcje i budżety. Przy pierwszym starcie backend tworzy tabele i konto **demo / demo** z zaimportowanym wyciągiem.
+
+## Lokalnie (bez Dockera, SQLite)
 
 ```powershell
 # backend
@@ -54,9 +60,33 @@ pytest
 cd frontend; npm install; npm start
 ```
 
-Lub całość: `docker compose up --build` → http://localhost:8080.
+## Docker Desktop — docker compose (PostgreSQL + backend + frontend)
 
-## Wdrożenie
+```powershell
+copy .env.example .env            # opcjonalnie: hasło do bazy
+copy backend\.env.example backend\.env
+docker compose up --build         # -> http://localhost:8080  (demo / demo)
+docker compose down               # stop (dane zostają w wolumenie pgdata)
+docker compose down -v            # stop + skasowanie bazy
+```
+
+Backend uruchomiony poza Dockerem może korzystać z tej samej bazy: `DATABASE_URL=postgresql+psycopg://duckbank:duckbank@localhost:5432/duckbank`.
+
+## Docker Desktop — Kubernetes
+
+Włącz Kubernetes w Docker Desktop (Settings → Kubernetes), potem:
+
+```powershell
+docker build -t duckbank-backend:dev backend
+docker build -t duckbank-frontend:dev frontend
+kubectl create namespace duckbank
+kubectl apply -k k8s/overlays/docker-desktop -n duckbank
+kubectl get pods -n duckbank -w     # poczekaj aż postgres, backend, frontend będą Running
+```
+
+Aplikacja: http://localhost:8080 (Service frontendu typu LoadBalancer). Usunięcie: `kubectl delete namespace duckbank`.
+
+## Wdrożenie (OpenShift / Kubernetes)
 
 ```powershell
 docker build -t quay.io/YOUR_ORG/ai-app-backend:latest backend
@@ -66,9 +96,11 @@ docker push quay.io/YOUR_ORG/ai-app-frontend:latest
 ```
 
 1. Podmień obrazy w `k8s/base/kustomization.yaml` (`images:`) i adres modelu w `k8s/base/configmap.yaml`.
-2. Token: `kubectl create secret generic backend-secret --from-literal=OPENSHIFT_AI_TOKEN=...` (usuń `secret.yaml` z base, jeśli zarządzasz sekretem osobno).
+2. Zmień hasło bazy w `k8s/base/secret.yaml` (w `postgres-credentials` **i** w `DATABASE_URL` w `backend-secret`) albo utwórz sekrety ręcznie (polecenia w komentarzu pliku) i usuń `secret.yaml` z `kustomization.yaml`.
 3. Zastosuj overlay:
-   - OpenShift: `oc apply -k k8s/overlays/openshift -n <projekt>`
+   - OpenShift: `oc apply -k k8s/overlays/openshift -n <projekt>` (ustawia `COOKIE_SECURE=true` dla HTTPS Route)
    - Zwykły Kubernetes: `kubectl apply -k k8s/overlays/kubernetes -n <namespace>`
 
-Uwagi: obrazy działają jako non-root (zgodne z `restricted` SCC); frontend zakłada Service o nazwie `backend` w tym samym namespace (`frontend/nginx.conf`). Po pierwszym `npm install` zacommituj `package-lock.json` i zamień w Dockerfile frontendu `npm install` na `npm ci`.
+`k8s/base` zawiera PostgreSQL 16 (`postgres.yaml`: Deployment z 1 repliką, PVC 1Gi na dane, Service `postgres`). Obraz `quay.io/sclorg/postgresql-16-c9s` działa jako non-root, więc pasuje do `restricted` SCC w OpenShift. Backend przy starcie czeka na bazę (`DB_CONNECT_RETRIES`), więc kolejność uruchamiania podów nie ma znaczenia.
+
+Uwagi: obrazy działają jako non-root (zgodne z `restricted` SCC); frontend zakłada Service o nazwie `backend` w tym samym namespace (`frontend/nginx.conf`).

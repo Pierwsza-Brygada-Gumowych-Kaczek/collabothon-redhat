@@ -1,0 +1,54 @@
+# Kubernetes in Docker Desktop (Settings -> Kubernetes -> Enable Kubernetes), for local testing.
+#
+#   docker build -t duckbank-backend:dev backend
+#   docker build -t duckbank-frontend:dev frontend
+#   kubectl create namespace duckbank
+#   kubectl apply -k k8s/overlays/docker-desktop -n duckbank
+#   -> http://localhost:8080   (login: demo / demo)
+#
+# Images are taken from the local Docker image store (no registry needed); PostgreSQL data is kept
+# in a PersistentVolumeClaim (Docker Desktop's built-in "hostpath" storage class).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: backend
+    newName: duckbank-backend
+    newTag: dev
+  - name: frontend
+    newName: duckbank-frontend
+    newTag: dev
+
+patches:
+  # One replica each is enough locally; use the locally built images.
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  # Docker Desktop publishes LoadBalancer services on localhost.
+  - target:
+      kind: Service
+      name: frontend
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: LoadBalancer

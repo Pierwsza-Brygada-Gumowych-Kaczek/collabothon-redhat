@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { BankService } from './bank.service';
 
 const THEME_KEY = 'duckbank-theme';
@@ -23,6 +23,15 @@ function initialTheme(): 'light' | 'dark' {
 })
 export class AppComponent implements AfterViewInit {
   readonly bank = inject(BankService);
+  private readonly router = inject(Router);
+
+  logout(): void {
+    this.bank.logout().subscribe({
+      next: () => this.router.navigate(['/login']),
+      error: () => this.router.navigate(['/login']),
+    });
+  }
+
   /** Light / dark theme: saved per browser, defaults to the system setting. */
   readonly theme = signal<'light' | 'dark'>(initialTheme());
 

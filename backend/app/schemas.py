@@ -98,10 +98,41 @@ class AccountOverview(BaseModel):
     categories: list[CategoryTotal]
 
 
+class BudgetCreate(BaseModel):
+    """A budget the user adds: track a category and/or merchants, with an optional limit."""
+
+    name: str = Field(min_length=1, max_length=60)
+    description: str = Field(default="", max_length=120)
+    category: str | None = None
+    merchants: list[str] = Field(default_factory=list, max_length=10)
+    # Monthly limit in EUR; empty = suggested from history.
+    limit: float | None = Field(default=None, gt=0, le=10_000_000)
+    photo: str | None = None
+
+
+class BudgetDefinition(BudgetCreate):
+    id: str
+
+
+class BudgetOption(BaseModel):
+    value: str
+    suggested_limit: float
+
+
+class BudgetOptions(BaseModel):
+    categories: list[BudgetOption]
+    merchants: list[BudgetOption]
+    photos: list[str]
+
+
 class Budget(BaseModel):
     id: str
     name: str
     description: str
+    category: str | None = None
+    merchants: list[str] = []
+    photo: str | None = None
+    custom_limit: bool = False
     limit: float
     spent: float
     remaining: float
@@ -204,12 +235,23 @@ class ForecastPoint(BaseModel):
     balance: float
     low: float
     high: float
+    # Expected money in that day (card revenue, last year's daily average for the month).
+    expected_in: float = 0
 
 
 class ScheduledFlow(BaseModel):
     date: date
     label: str
     amount: float
+
+
+class ForecastResponse(BaseModel):
+    """Calculated balance forecast only (no AI) — used by the Overview chart."""
+
+    as_of: date
+    days: int
+    forecast: list[ForecastPoint]
+    scheduled: list[ScheduledFlow]
 
 
 class CreditFacility(BaseModel):

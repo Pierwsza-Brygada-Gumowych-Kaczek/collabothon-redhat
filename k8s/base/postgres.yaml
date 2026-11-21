@@ -1,0 +1,89 @@
+# PostgreSQL 16 for DuckBank (users, sessions, transactions, budgets).
+# Image: Red Hat sclorg PostgreSQL — runs as a non-root arbitrary UID, so it works under the
+# OpenShift "restricted" SCC as well as on plain Kubernetes (e.g. Docker Desktop).
+# Credentials: Secret "postgres-credentials" (see secret.yaml); the backend's DATABASE_URL must match.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    app: postgres
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  # One pod owns the volume — never run two side by side during an update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-user } }
+            - name: POSTGRESQL_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-password } }
+            - name: POSTGRESQL_DATABASE
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-name } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -h 127.0.0.1 -p 5432 -U \"$POSTGRESQL_USER\" -d \"$POSTGRESQL_DATABASE\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 5432 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres

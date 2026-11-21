@@ -5,6 +5,7 @@ kind: Kustomization
 resources:
   - configmap.yaml
   - secret.yaml
+  - postgres.yaml
   - backend.yaml
   - frontend.yaml
 
@@ -14,6 +15,9 @@ images:
     newTag: latest
   - name: frontend
     newName: quay.io/YOUR_ORG/ai-app-frontend
+    newTag: latest
+  - name: postgres
+    newName: quay.io/sclorg/postgresql-16-c9s
     newTag: latest
 
 labels:

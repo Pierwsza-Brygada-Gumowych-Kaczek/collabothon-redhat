@@ -19,9 +19,10 @@
     {
       "name": "frontend-verify",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["ng", "serve", "--port", "4300", "--proxy-config", "C:/Users/zuz3c/AppData/Local/Temp/claude/4f523fdb810ec4cc/869fabc7-6b81-4e35-bd41-e2ba7e51cd23/scratchpad/proxy-8001.json"],
+      "runtimeArgs": ["ng", "serve", "--port", "4300"],
       "cwd": "C:/Users/zuz3c/collabothon-redhat/frontend",
-      "port": 4300
+      "port": 4300,
+      "autoPort": false
     }
   ]
 }

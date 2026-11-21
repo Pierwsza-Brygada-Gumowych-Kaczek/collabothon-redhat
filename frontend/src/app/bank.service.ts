@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, WritableSignal, inject, signal } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, firstValueFrom, tap } from 'rxjs';
 
 export interface User {
   id: string;
@@ -269,9 +269,47 @@ export class BankService {
   readonly aiStatus = signal<AiStatus | null>(null);
   readonly error = signal<string | null>(null);
 
-  constructor() {
-    // Prototype: no login — the demo user is "signed in" straight away.
-    this.http.get<User>('/api/me').subscribe({ next: (u) => this.user.set(u), error: () => this.fail() });
+  /** 'unknown' until the session was checked once. */
+  readonly session = signal<'unknown' | 'in' | 'out'>('unknown');
+
+  /** Called by the route guard: is there a valid login session (cookie)? Loads data if so. */
+  async checkSession(): Promise<boolean> {
+    if (this.session() === 'in') return true;
+    try {
+      const u = await firstValueFrom(this.http.get<User>('/api/auth/me'));
+      this.signedIn(u);
+      return true;
+    } catch {
+      this.session.set('out');
+      return false;
+    }
+  }
+
+  login(username: string, password: string): Observable<User> {
+    return this.http.post<User>('/api/auth/login', { username, password }).pipe(tap((u) => this.signedIn(u)));
+  }
+
+  logout(): Observable<void> {
+    return this.http.post<void>('/api/auth/logout', {}).pipe(tap({ next: () => this.reset(), error: () => this.reset() }));
+  }
+
+  /** Session expired / logged out: forget everything loaded for the previous user. */
+  reset(): void {
+    this.session.set('out');
+    for (const s of [this.user, this.overview, this.insights, this.taxTips, this.forecast, this.liquidity, this.fx, this.aiStatus, this.error]) {
+      (s as WritableSignal<unknown>).set(null);
+    }
+    this.budgets.set([]);
+  }
+
+  private signedIn(u: User): void {
+    this.user.set(u);
+    this.session.set('in');
+    this.error.set(null);
+    this.loadAll();
+  }
+
+  private loadAll(): void {
     this.http
       .get<AccountOverview>('/api/account/overview')
       .subscribe({ next: (o) => this.overview.set(o), error: () => this.fail() });
@@ -347,6 +385,7 @@ export class BankService {
   }
 
   private fail(): void {
+    if (this.session() !== 'in') return; // 401s are handled by the auth interceptor
     this.error.set('Could not load data from the server. Please refresh the page.');
   }
 }

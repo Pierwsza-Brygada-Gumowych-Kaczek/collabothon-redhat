@@ -4,7 +4,7 @@
            disablepictureinpicture aria-hidden="true"></video>
     DuckBank <span class="tag">Business</span>
   </a>
-  @if (bank.aiStatus(); as s) {
+  @if (bank.session() === 'in' && bank.aiStatus(); as s) {
     <button class="ai-pill" [class.ok]="s.reachable && s.model_found"
             [class.demo]="!(s.reachable && s.model_found) && s.demo_fallback" (click)="bank.loadAiStatus()"
             [title]="s.error || ('Connected to ' + s.url)">
@@ -23,11 +23,13 @@
         <strong>{{ u.name }}</strong>
         <small>{{ u.business }} · {{ u.segment }}</small>
       </div>
-      <div class="avatar" title="Signed in automatically (demo account)">{{ u.initials }}</div>
+      <div class="avatar" [title]="'Signed in as ' + u.name">{{ u.initials }}</div>
+      <button class="logout" type="button" (click)="logout()" title="Sign out">Sign out</button>
     </div>
   }
 </header>
 
+@if (bank.session() === 'in') {
 <nav class="tabs">
   @for (n of nav; track n.path) {
     <a [routerLink]="n.path" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: n.exact }">
@@ -35,6 +37,7 @@
     </a>
   }
 </nav>
+}
 
 <main>
   @if (bank.error(); as e) {

@@ -8,6 +8,8 @@
 .logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f5c242; background: #3b82c4; }
 .tag { font-size: .7rem; font-weight: 600; background: #ee0000; padding: .1rem .45rem; border-radius: 4px; }
 .user { display: flex; align-items: center; gap: .75rem; }
+.logout { background: transparent; color: #ddd; border: 1px solid #444b52; padding: .35rem .7rem; font-size: .8rem; }
+.logout:hover { background: #2a2e33; color: #fff; }
 .topbar { gap: .5rem; }
 .theme-btn { margin-right: .9rem; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: grid; place-items: center;
   background: #2a2e33; color: #f5c242; border: 1px solid #3d434a; font-size: 1.05rem; line-height: 1; }

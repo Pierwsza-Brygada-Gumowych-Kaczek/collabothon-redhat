@@ -7,7 +7,6 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
-from functools import lru_cache
 from pathlib import Path
 
 from app.schemas import (
@@ -77,9 +76,11 @@ def _fx_rate(currency: str, reference: str) -> float | None:
     return None
 
 
-@lru_cache
-def load_transactions(path: str) -> tuple[Transaction, ...]:
-    """Transactions sorted by date ascending (stable w.r.t. intra-day file order)."""
+def parse_csv(path: str) -> tuple[Transaction, ...]:
+    """Parse a bank statement CSV (used to import it into the database).
+
+    Transactions are sorted by date ascending (stable w.r.t. intra-day file order).
+    """
     with Path(path).open(encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh, delimiter=";"))
 

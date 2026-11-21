@@ -76,7 +76,10 @@ def forecast(
 
     recurring: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
     variable_by_day: dict[date, float] = defaultdict(float)
+    income_by_month: dict[int, float] = defaultdict(float)
     for t in txs:
+        if t.amount_eur > 0:
+            income_by_month[t.booking_date.month] += t.amount_eur
         if t.category == CAT_SWISS:
             continue
         if t.category in RECURRING:
@@ -84,10 +87,30 @@ def forecast(
         else:
             variable_by_day[t.booking_date] += t.amount_eur
 
-    month_avg: dict[int, float] = {}
+    month_out: dict[int, float] = {}  # average daily variable money out (suppliers, market) per month
+    month_in: dict[int, float] = {}  # average daily money in (card revenue) per month
     for m in range(1, 13):
-        total = sum(v for d, v in variable_by_day.items() if d.month == m)
-        month_avg[m] = total / calendar.monthrange(as_of.year, m)[1]
+        n_days = calendar.monthrange(as_of.year, m)[1]
+        month_in[m] = income_by_month[m] / n_days
+        month_out[m] = sum(v for d, v in variable_by_day.items() if d.month == m) / n_days - month_in[m]
+
+    # Card revenue follows a weekly rhythm: credit-card payouts arrive on Mon/Tue/Fri, debit-card
+    # settlements daily. weekday_factor[w] = average income on weekday w / average daily income
+    # (normal months only), so expected income = month level x weekday shape.
+    income_by_day: dict[date, float] = defaultdict(float)
+    for t in txs:
+        if t.amount_eur > 0:
+            income_by_day[t.booking_date] += t.amount_eur
+    wd_sum, wd_n = [0.0] * 7, [0] * 7
+    d = txs[0].booking_date
+    while d <= as_of:
+        if d.month != SHUTDOWN_MONTH:
+            wd_sum[d.weekday()] += income_by_day.get(d, 0.0)
+            wd_n[d.weekday()] += 1
+        d += timedelta(days=1)
+    wd_avg = [wd_sum[i] / max(wd_n[i], 1) for i in range(7)]
+    overall = sum(wd_avg) / 7 or 1.0
+    weekday_factor = [v / overall for v in wd_avg]
 
     normal_days = []
     d = txs[0].booking_date
@@ -101,7 +124,8 @@ def forecast(
     scheduled: list[ScheduledFlow] = []
     for k in range(1, days + 1):
         day = as_of + timedelta(days=k)
-        balance += month_avg[day.month]
+        expected_in = month_in[day.month] * weekday_factor[day.weekday()]
+        balance += expected_in + month_out[day.month]
         for t in recurring.get((day.month, day.day), []):
             amount = t.amount_eur
             label = _short_label(t)
@@ -119,7 +143,8 @@ def forecast(
                                            amount=-tax.estimated_additional_payment))
         band = sigma * math.sqrt(k)
         points.append(ForecastPoint(date=day, balance=round(balance, 2),
-                                    low=round(balance - band, 2), high=round(balance + band, 2)))
+                                    low=round(balance - band, 2), high=round(balance + band, 2),
+                                    expected_in=round(expected_in, 2)))
 
     # Merge same-day, same-label flows (e.g. four salary payments on the 28th).
     merged: dict[tuple[date, str], float] = defaultdict(float)
