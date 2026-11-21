@@ -1,106 +1,76 @@
-# Template: Angular + FastAPI + OpenShift AI na Kubernetes
+# DuckBank — Autonomous CFO for SMEs
+
+> An AI-powered CFO assistant for small business owners. It watches the company's bank account, spots financial risks before they hurt, and explains — in plain English — what to do next. The owner always stays in control.
+
+Built for the **Collabothon 2026 · Commerzbank × Red Hat "Autonomous CFO"** challenge. The solution is designed to run on **Red Hat OpenShift AI**, using an open-weights language model served there.
+
+---
+
+## The problem
+
+Small and medium-sized enterprises are usually run by an owner who is also the finance department. There is no CFO, so:
+
+- financial management eats time that should go into running the business,
+- important details get overlooked — a cash dip before payday, a tax prepayment due next week, a currency exposure nobody hedges, idle cash earning nothing,
+- the owner is rarely a finance expert, so even good advice is hard to understand and act on.
+
+## The solution
+
+DuckBank is an **agentic CFO assistant**. It reads the company's bank statement and runs specialised agents. Each one turns raw transactions into a clear, explainable recommendation for a non-expert:
+
+| Agent | What it does | Typical output |
+|---|---|---|
+| **Liquidity agent** | Forecasts the account balance N days ahead from recurring income, costs and scheduled payments | Warns about a coming cash shortfall and proposes a suitable credit facility |
+| **FX hedging agent** | Finds currency risk from foreign-currency payments (e.g. CHF loan instalments) | Proposes hedges using Commerzbank products |
+| **Tax agent** | Builds a schedule of advance tax payments | Recommends prepayment amounts and legal optimisation opportunities |
+| **Investment agent** | Looks at the liquidity that is really free to invest | Suggests fixed-term deposits, money-market funds or capex financing |
+
+Alongside the agents, the app shows the balance forecast, transactions, monthly summaries, spending categories and monthly budgets, so the owner sees the full picture.
+
+### Demo business
+
+The demo account is **Vincenzo Amalfi / Pizzeria Amalfi**, a restaurant with a full year of 2025 transactions: seasonal revenue, rent, suppliers, payroll and CHF-denominated loan instalments. This gives every agent something realistic to find.
+
+---
+
+## How it works: facts vs. AI
+
+The key design decision is a strict split between **numbers** and **words**:
 
 ```
-backend/    FastAPI — proxy do modelu w OpenShift AI (API zgodne z OpenAI: KServe + vLLM)
-frontend/   Angular 19 (standalone) + nginx (SPA + reverse proxy /api -> backend)
-k8s/        Kustomize: base + overlay openshift (Route) + overlay kubernetes (Ingress)
+ bank statement
+        │
+        ▼
+ 1. ANALYSE      deterministic code computes the hard facts:
+                 balances, cash-flow forecast, tax amounts, CHF exposure
+        │
+        ▼
+ 2. RECOMMEND    the facts go to the language model on OpenShift AI,
+                 which writes the summary and recommendations
+        │
+        ▼
+ 3. EXPLAIN      the UI shows the facts, the recommendation, the reasoning,
+                 risk and difficulty — and who produced each part
+        │
+        ▼
+ 4. DECIDE       the business owner reviews it and decides what to do
 ```
 
-Przepływ: `przeglądarka → nginx (frontend) → /api → FastAPI → InferenceService w OpenShift AI`.
+- **Agents analyse independently** — all figures come from deterministic code over the real statement. The model never invents balances or tax amounts.
+- **Agents recommend** — the model only writes the interpretation and proposals, in plain language, with cautious ranges and no promised returns.
+- **The owner decides** — the prototype is read-only. Nothing moves money or signs a product, so every action is a recommendation the owner chooses to follow.
+- **Transparent about the source** — the UI always shows whether a result comes from the real AI model, from clearly labelled demo content (used only while no model is connected), or whether the model was unavailable. In the last case the calculated facts are still shown and no recommendations are invented.
 
-## Konfiguracja backendu (zmienne środowiskowe)
+This keeps the assistant explainable and auditable, and understandable for owners with any level of technical confidence — in the spirit of the hackathon theme "Innovations for all generations".
 
-| Zmienna | Opis |
-|---|---|
-| `OPENSHIFT_AI_URL` | URL modelu kończący się na `/v1` (w klastrze: `http://<model>-predictor.<ns>.svc.cluster.local:8080/v1`) |
-| `OPENSHIFT_AI_MODEL` | nazwa modelu wysyłana w żądaniu |
-| `OPENSHIFT_AI_TOKEN` | token Bearer (wymagany przy zewnętrznej routie z autoryzacją) |
-| `OPENSHIFT_AI_VERIFY_SSL` / `OPENSHIFT_AI_CA_BUNDLE` | weryfikacja TLS / własny CA |
+---
 
-Endpointy: `POST /api/chat`, `POST /api/chat/stream`, `GET /healthz`, `GET /readyz` (sprawdza dostępność modelu).
+## Roadmap
 
-### Prototyp bankowy (dummy user)
+- Approval workflow: the owner approves a recommendation and a **simulated** execution (e.g. opening a credit line, placing a hedge) is recorded, clearly labelled as simulated vs. permitted.
+- Per-agent autonomy levels: analyse only / recommend / act after approval.
+- Agent tracing and evaluation, guardrails, and orchestration of agents.
 
-Brak logowania — każdy odwiedzający widzi konto demo **Vincenzo Amalfi / Pizzeria Amalfi**.
-Dane pochodzą z `backend/app/data/pizzeria-amalfi-bank-statement-2025-v6.csv` (raty w CHF przeliczane po kursie z opisu przelewu, saldo otwarcia `STATEMENT_OPENING_BALANCE=2500`).
+## License
 
-| Endpoint | Opis |
-|---|---|
-| `GET /api/me` | dane dummy usera |
-| `GET /api/account/overview` | saldo, KPI, saldo dzienne, podsumowanie miesięczne, kategorie wydatków |
-| `GET /api/account/transactions?limit=&offset=&category=` | transakcje (najnowsze pierwsze, opcjonalny filtr kategorii) |
-| `GET /api/budgets` | miesięczne budżety (limit, wydano, zostało, reset) |
-| `GET /api/liquidity?days=90&include_tax=false` | **Liquidity agent** — prognoza salda N dni naprzód + propozycje linii kredytowych |
-| `GET /api/insights` | **Investment agent** — lokaty, fundusze rynku pieniężnego, ETF, finansowanie capex |
-| `GET /api/tax-tips` | **Tax agent** — harmonogram zaliczek podatkowych + legalna optymalizacja |
-| `GET /api/fx` | **FX hedging agent** — ryzyko walutowe (CHF) + zabezpieczenia produktami Commerzbanku |
-| `GET /api/ai/status` | czy model OpenShift AI jest skonfigurowany, osiągalny i serwuje `OPENSHIFT_AI_MODEL` |
-
-Każdy agent: **fakty** (saldo, prognoza, kwoty podatków, ekspozycja CHF) liczone deterministycznie z wyciągu → **rekomendacje** pisze wyłącznie model w OpenShift AI (JSON). Gdy modelu nie ma albo zwróci niepoprawny JSON: przy `AGENTS_DEMO_FALLBACK=true` (domyślnie, na czas developmentu) agenci zwracają rekomendacje demo z reguł (`source: "demo"`, wyraźnie oznaczone w UI); przy `false` — `source: "unavailable"` i `error`, a strona pokazuje błąd. Udane odpowiedzi są cache'owane (`?refresh=true` liczy od nowa), błędy nie. UI aplikacji jest po angielsku.
-
-Podłączenie modelu: uzupełnij `OPENSHIFT_AI_URL`, `OPENSHIFT_AI_MODEL`, `OPENSHIFT_AI_TOKEN` w `backend/.env` (opis w `.env.example`), zrestartuj backend i sprawdź `GET /api/ai/status` (w UI: znacznik „AI connected / AI offline” w nagłówku).
-
-## Konfiguracja
-
-Wszystkie ustawienia backendu są w `backend/.env` (pełna lista kluczy: `backend/.env.example`, kod: `backend/app/config.py`). Zmienne środowiskowe (docker compose, ConfigMap/Secret w Kubernetes) mają pierwszeństwo przed `.env`. Dane logowania do PostgreSQL dla docker compose: `.env` w katalogu głównym (wzór: `.env.example`, domyślnie `duckbank`/`duckbank`).
-
-Baza danych przechowuje użytkowników, sesje logowania, transakcje i budżety. Przy pierwszym starcie backend tworzy tabele i konto **demo / demo** z zaimportowanym wyciągiem.
-
-## Lokalnie (bez Dockera, SQLite)
-
-```powershell
-# backend
-cd backend; python -m venv .venv; .venv\Scripts\activate
-pip install -r requirements-dev.txt
-copy .env.example .env      # uzupełnij URL modelu
-uvicorn app.main:app --reload
-pytest
-
-# frontend (nowy terminal) — proxy /api -> localhost:8000
-cd frontend; npm install; npm start
-```
-
-## Docker Desktop — docker compose (PostgreSQL + backend + frontend)
-
-```powershell
-copy .env.example .env            # opcjonalnie: hasło do bazy
-copy backend\.env.example backend\.env
-docker compose up --build         # -> http://localhost:8080  (demo / demo)
-docker compose down               # stop (dane zostają w wolumenie pgdata)
-docker compose down -v            # stop + skasowanie bazy
-```
-
-Backend uruchomiony poza Dockerem może korzystać z tej samej bazy: `DATABASE_URL=postgresql+psycopg://duckbank:duckbank@localhost:5432/duckbank`.
-
-## Docker Desktop — Kubernetes
-
-Włącz Kubernetes w Docker Desktop (Settings → Kubernetes), potem:
-
-```powershell
-docker build -t duckbank-backend:dev backend
-docker build -t duckbank-frontend:dev frontend
-kubectl create namespace duckbank
-kubectl apply -k k8s/overlays/docker-desktop -n duckbank
-kubectl get pods -n duckbank -w     # poczekaj aż postgres, backend, frontend będą Running
-```
-
-Aplikacja: http://localhost:8080 (Service frontendu typu LoadBalancer). Usunięcie: `kubectl delete namespace duckbank`.
-
-## Wdrożenie (OpenShift / Kubernetes)
-
-```powershell
-docker build -t quay.io/YOUR_ORG/ai-app-backend:latest backend
-docker build -t quay.io/YOUR_ORG/ai-app-frontend:latest frontend
-docker push quay.io/YOUR_ORG/ai-app-backend:latest
-docker push quay.io/YOUR_ORG/ai-app-frontend:latest
-```
-
-1. Podmień obrazy w `k8s/base/kustomization.yaml` (`images:`) i adres modelu w `k8s/base/configmap.yaml`.
-2. Zmień hasło bazy w `k8s/base/secret.yaml` (w `postgres-credentials` **i** w `DATABASE_URL` w `backend-secret`) albo utwórz sekrety ręcznie (polecenia w komentarzu pliku) i usuń `secret.yaml` z `kustomization.yaml`.
-3. Zastosuj overlay:
-   - OpenShift: `oc apply -k k8s/overlays/openshift -n <projekt>` (ustawia `COOKIE_SECURE=true` dla HTTPS Route)
-   - Zwykły Kubernetes: `kubectl apply -k k8s/overlays/kubernetes -n <namespace>`
-
-`k8s/base` zawiera PostgreSQL 16 (`postgres.yaml`: Deployment z 1 repliką, PVC 1Gi na dane, Service `postgres`). Obraz `quay.io/sclorg/postgresql-16-c9s` działa jako non-root, więc pasuje do `restricted` SCC w OpenShift. Backend przy starcie czeka na bazę (`DB_CONNECT_RETRIES`), więc kolejność uruchamiania podów nie ma znaczenia.
-
-Uwagi: obrazy działają jako non-root (zgodne z `restricted` SCC); frontend zakłada Service o nazwie `backend` w tym samym namespace (`frontend/nginx.conf`).
+See [LICENSE](LICENSE).
