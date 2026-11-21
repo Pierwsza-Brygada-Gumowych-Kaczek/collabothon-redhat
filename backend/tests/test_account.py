@@ -292,6 +292,22 @@ def test_budget_needs_something_to_track_and_suggests_limit(budget_app):
     assert r["custom_limit"] is False and r["limit"] > 0
 
 
+def test_edit_budget_name_limit_and_own_photo(budget_app):
+    photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
+    with logged_in(budget_app) as client:
+        r = client.put("/api/budgets/rent", json={
+            "name": "Office rent", "description": "New lease", "category": "Rent", "limit": 5000, "photo": photo,
+        })
+        assert r.status_code == 200
+        b = r.json()
+        assert b["id"] == "rent" and b["name"] == "Office rent" and b["limit"] == 5000 and b["photo"] == photo
+        assert next(x for x in client.get("/api/budgets").json() if x["id"] == "rent")["name"] == "Office rent"
+
+        bad = client.put("/api/budgets/rent", json={"name": "x", "category": "Rent", "photo": "http://evil/x.png"})
+        assert bad.status_code == 422
+        assert client.put("/api/budgets/nope", json={"name": "x", "category": "Rent"}).status_code == 404
+
+
 # --- Login & persistence ---
 
 

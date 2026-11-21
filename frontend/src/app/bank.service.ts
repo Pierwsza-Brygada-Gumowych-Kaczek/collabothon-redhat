@@ -335,6 +335,10 @@ export class BankService {
     return this.http.post<Budget>('/api/budgets', body);
   }
 
+  updateBudget(id: string, body: BudgetCreate): Observable<Budget> {
+    return this.http.put<Budget>(`/api/budgets/${encodeURIComponent(id)}`, body);
+  }
+
   deleteBudget(id: string): Observable<void> {
     return this.http.delete<void>(`/api/budgets/${encodeURIComponent(id)}`);
   }

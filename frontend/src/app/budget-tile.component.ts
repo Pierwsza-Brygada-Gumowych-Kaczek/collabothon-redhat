@@ -26,6 +26,8 @@ export const BUDGET_PHOTOS: Record<string, string> = {
           <span class="initial">{{ b.name.charAt(0).toUpperCase() }}</span>
         }
         <span class="name">{{ b.name }}</span>
+        <button class="edit" type="button" (click)="edit.emit(b)" [attr.aria-label]="'Edit budget ' + b.name"
+                title="Edit budget">✎</button>
         <button class="del" type="button" (click)="remove.emit(b)" [attr.aria-label]="'Delete budget ' + b.name"
                 title="Delete budget">×</button>
       </div>
@@ -66,9 +68,13 @@ export const BUDGET_PHOTOS: Record<string, string> = {
     .del { position: absolute; top: .5rem; right: .5rem; z-index: 2; width: 28px; height: 28px; padding: 0; border-radius: 50%;
       background: rgba(0, 0, 0, .55); color: #fff; font-size: 1.1rem; line-height: 1; display: grid; place-items: center;
       opacity: 0; transition: opacity .15s; }
-    .tile:hover .del, .del:focus-visible { opacity: 1; }
+    .edit { position: absolute; top: .5rem; right: 2.6rem; z-index: 2; width: 28px; height: 28px; padding: 0; border-radius: 50%;
+      background: rgba(0, 0, 0, .55); color: #fff; font-size: 1rem; line-height: 1; display: grid; place-items: center;
+      opacity: 0; transition: opacity .15s; }
+    .tile:hover .del, .del:focus-visible, .tile:hover .edit, .edit:focus-visible { opacity: 1; }
     .del:hover { background: #c9190b; }
-    @media (hover: none) { .del { opacity: 1; } }
+    .edit:hover { background: var(--blue); }
+    @media (hover: none) { .del, .edit { opacity: 1; } }
     .name { position: absolute; left: .9rem; bottom: .6rem; z-index: 1; color: #fff; font-weight: 700; font-size: 1.05rem; }
     .body { padding: .85rem .9rem 1rem; display: flex; flex-direction: column; gap: .5rem; }
     .left { display: flex; flex-direction: column; }
@@ -85,9 +91,11 @@ export class BudgetTileComponent {
   readonly eurShort = eurShort;
 
   readonly remove = output<Budget>();
+  readonly edit = output<Budget>();
 
   readonly photo = computed(() => {
     const b = this.budget();
+    if (b.photo?.startsWith('data:image/')) return b.photo;
     return BUDGET_PHOTOS[b.photo ?? ''] ?? '';
   });
   /** Stable colour for budgets without a photo. */

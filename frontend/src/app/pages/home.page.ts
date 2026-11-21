@@ -101,12 +101,15 @@ import { eur, eurShort } from '../format';
           @if (adding()) {
             <app-budget-form (saved)="onBudgetSaved()" (cancel)="adding.set(false)" />
           }
+          @if (editingBudget(); as eb) {
+            <app-budget-form [budget]="eb" (saved)="onBudgetSaved()" (cancel)="editingBudget.set(null)" />
+          }
           @if (budgetError()) {
             <p class="budget-err">{{ budgetError() }}</p>
           }
           <div class="budgets">
             @for (b of bank.budgets(); track b.id) {
-              <app-budget-tile [budget]="b" (remove)="removeBudget($event)" />
+              <app-budget-tile [budget]="b" (remove)="removeBudget($event)" (edit)="startEdit($event)" />
             }
             @if (!adding()) {
               <button type="button" class="add-tile" (click)="adding.set(true)">
@@ -189,8 +192,16 @@ export class HomePage {
     this.bank.transactions(5).subscribe((p) => this.recent.set(p.items));
   }
 
+  readonly editingBudget = signal<Budget | null>(null);
+
+  startEdit(b: Budget): void {
+    this.adding.set(false);
+    this.editingBudget.set(b);
+  }
+
   onBudgetSaved(): void {
     this.adding.set(false);
+    this.editingBudget.set(null);
     this.bank.loadBudgets();
   }
 

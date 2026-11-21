@@ -1,5 +1,6 @@
 """Account data and AI CFO agents for the logged-in user (all data comes from the database)."""
 
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -99,6 +100,26 @@ def balance_forecast(days: int = Query(200, ge=7, le=365), acc: Account = Depend
 # --- Budgets (stored per user in the database) ---------------------------------------------
 
 
+MAX_PHOTO_CHARS = 1_500_000  # ~1 MB picture as a base64 data URL
+_PHOTO_URL = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$")
+
+
+def _clean_budget(body: BudgetCreate) -> None:
+    """Normalise and validate a budget payload (shared by add and edit)."""
+    body.name = body.name.strip()
+    if not body.name:
+        raise HTTPException(422, "Give the budget a name.")
+    body.merchants = [m.strip() for m in body.merchants if m.strip()]
+    body.category = (body.category or "").strip() or None
+    if not body.category and not body.merchants:
+        raise HTTPException(422, "Choose a category or a merchant to track.")
+    if body.photo and body.photo not in PHOTOS:
+        if len(body.photo) > MAX_PHOTO_CHARS or not _PHOTO_URL.match(body.photo):
+            raise HTTPException(422, "The picture must be a PNG, JPEG, WebP or GIF image of up to 1 MB.")
+    elif not body.photo:
+        body.photo = None
+
+
 @router.get("/budgets", response_model=list[Budget])
 def budgets(
     acc: Account = Depends(get_account), db: Session = Depends(get_db), today: date = Depends(get_today)
@@ -121,13 +142,25 @@ def add_budget(
     today: date = Depends(get_today),
 ) -> Budget:
     """Add a budget. It must track a category or at least one merchant."""
-    body.merchants = [m.strip() for m in body.merchants if m.strip()]
-    if not body.category and not body.merchants:
-        raise HTTPException(422, "Choose a category or a merchant to track.")
-    if body.photo and body.photo not in PHOTOS:
-        body.photo = None
+    _clean_budget(body)
     created = repository.add_budget(db, acc.user.id, body)
     return build_budgets(acc.txs, [created], today)[0]
+
+
+@router.put("/budgets/{budget_id}", response_model=Budget)
+def update_budget(
+    budget_id: str,
+    body: BudgetCreate,
+    acc: Account = Depends(get_account),
+    db: Session = Depends(get_db),
+    today: date = Depends(get_today),
+) -> Budget:
+    """Edit every setting of a budget: name, description, tracked category/merchants, limit, picture."""
+    _clean_budget(body)
+    updated = repository.update_budget(db, acc.user.id, budget_id, body)
+    if updated is None:
+        raise HTTPException(404, "Budget not found")
+    return build_budgets(acc.txs, [updated], today)[0]
 
 
 @router.delete("/budgets/{budget_id}", status_code=204)

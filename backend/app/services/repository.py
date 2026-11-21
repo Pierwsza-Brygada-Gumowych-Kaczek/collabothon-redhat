@@ -76,6 +76,16 @@ def add_budget(db: Session, user_id: int, body: BudgetCreate, slug: str | None =
     return _to_def(row)
 
 
+def update_budget(db: Session, user_id: int, slug: str, body: BudgetCreate) -> BudgetDefinition | None:
+    row = db.scalar(select(BudgetRow).where(BudgetRow.user_id == user_id, BudgetRow.slug == slug))
+    if row is None:
+        return None
+    for key, value in body.model_dump().items():
+        setattr(row, key, value)
+    db.commit()
+    return _to_def(row)
+
+
 def delete_budget(db: Session, user_id: int, slug: str) -> bool:
     res = db.execute(delete(BudgetRow).where(BudgetRow.user_id == user_id, BudgetRow.slug == slug))
     db.commit()

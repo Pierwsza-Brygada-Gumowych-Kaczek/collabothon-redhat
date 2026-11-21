@@ -20,7 +20,9 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
+    text,
     create_engine,
 )
 from sqlalchemy.engine import Engine
@@ -89,7 +91,8 @@ class BudgetRow(Base):
     category: Mapped[str | None] = mapped_column(String(60), nullable=True)
     merchants: Mapped[list[str]] = mapped_column(JSON, default=list)
     limit: Mapped[float | None] = mapped_column(Float, nullable=True)
-    photo: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Preset picture id, or an uploaded picture as a data URL.
+    photo: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -111,6 +114,10 @@ def init_engine(url: str, retries: int = 1, retry_seconds: float = 2.0) -> Engin
     for attempt in range(1, max(retries, 1) + 1):
         try:
             Base.metadata.create_all(engine)
+            if engine.dialect.name == "postgresql":
+                # Older databases had photo VARCHAR(40); uploaded pictures need more room.
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE budgets ALTER COLUMN photo TYPE TEXT"))
             break
         except OperationalError as exc:
             if attempt >= retries:
