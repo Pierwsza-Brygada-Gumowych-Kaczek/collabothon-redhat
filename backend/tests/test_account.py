@@ -459,6 +459,12 @@ def test_analytics_for_week_month_and_year(plain_app):
         assert round(sum(b["expenses"] for b in a["buckets"]), 2) == a["total_expenses"]
     assert week["total_expenses"] < month["total_expenses"] < year["total_expenses"]
 
+    # "All time" covers the whole statement (here it is exactly one year, so it equals the year view).
+    with logged_in(plain_app) as client:
+        allt = client.get("/api/analytics?range=all").json()
+    assert allt["period_from"] == ov["period_from"] and allt["total_expenses"] == year["total_expenses"]
+    assert len(allt["buckets"]) == 12
+
 
 # --- Login & persistence ---
 

@@ -209,13 +209,14 @@ def build_overview(txs: tuple[Transaction, ...], opening_balance: float) -> Acco
 
 # --- Analytics for a period ---------------------------------------------------------------
 
-RANGE_DAYS: dict[str, int] = {"week": 7, "month": 30, "year": 365}
+RANGE_DAYS: dict[str, int | None] = {"week": 7, "month": 30, "year": 365, "all": None}  # None = whole statement
 
 
 def build_analytics(txs: tuple[Transaction, ...], opening_balance: float, range_: AnalyticsRange) -> Analytics:
-    """Money in/out, balance and spending by category for the last week, 30 days or year of the statement."""
+    """Money in/out, balance and spending by category for the last week, 30 days, year or the whole statement."""
     end = txs[-1].booking_date
-    start = max(end - timedelta(days=RANGE_DAYS[range_] - 1), txs[0].booking_date)
+    days = RANGE_DAYS[range_]
+    start = txs[0].booking_date if days is None else max(end - timedelta(days=days - 1), txs[0].booking_date)
 
     before = opening_balance + sum(t.amount_eur for t in txs if t.booking_date < start)
     inside = [t for t in txs if start <= t.booking_date <= end]
@@ -238,14 +239,20 @@ def build_analytics(txs: tuple[Transaction, ...], opening_balance: float, range_
         daily.append(DailyBalance(date=day, balance=round(balance, 2)))
         day += timedelta(days=1)
 
-    if range_ == "year":
+    if range_ in ("year", "all"):
+        multi_year = start.year != end.year
         monthly: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
         for d, (inc, exp) in by_day.items():
             m = monthly[f"{d.year}-{d.month:02d}"]
             m[0] += inc
             m[1] += exp
         buckets = [
-            AnalyticsBucket(key=k, label=MONTHS[int(k[5:]) - 1], income=round(v[0], 2), expenses=round(v[1], 2))
+            AnalyticsBucket(
+                key=k,
+                label=MONTHS[int(k[5:]) - 1] + (f" {k[2:4]}" if multi_year else ""),
+                income=round(v[0], 2),
+                expenses=round(v[1], 2),
+            )
             for k, v in sorted(monthly.items())
         ]
     else:

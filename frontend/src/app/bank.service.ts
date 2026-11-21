@@ -256,7 +256,7 @@ export interface Fx extends AgentMeta {
   hedges: HedgeProposal[];
 }
 
-export type AnalyticsRange = 'week' | 'month' | 'year';
+export type AnalyticsRange = 'week' | 'month' | 'year' | 'all';
 
 export interface Analytics {
   range: AnalyticsRange;

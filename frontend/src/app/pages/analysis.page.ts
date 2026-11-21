@@ -12,6 +12,7 @@ const RANGES: { id: AnalyticsRange; label: string; phrase: string }[] = [
   { id: 'week', label: 'Last week', phrase: 'the last 7 days' },
   { id: 'month', label: 'Last month', phrase: 'the last 30 days' },
   { id: 'year', label: 'Last year', phrase: 'the last 12 months' },
+  { id: 'all', label: 'All time', phrase: 'all time' },
 ];
 
 @Component({
@@ -86,7 +87,7 @@ const RANGES: { id: AnalyticsRange; label: string; phrase: string }[] = [
             </div>
             <p class="note">
               <span class="sw neg-sw"></span> The red area shows when the account was overdrawn.
-              @if (range() === 'year') {
+              @if (range() === 'year' || range() === 'all') {
                 In June the restaurant was closed for 3 weeks (no revenue) while costs and the Zurich instalments kept going out.
               }
             </p>
@@ -94,7 +95,7 @@ const RANGES: { id: AnalyticsRange; label: string; phrase: string }[] = [
         </section>
 
         <section class="card">
-          <h2>{{ range() === 'year' ? 'Money in and out per month' : 'Money in and out per day' }}</h2>
+          <h2>{{ range() === 'year' || range() === 'all' ? 'Money in and out per month' : 'Money in and out per day' }}</h2>
           @if (bars(); as bs) {
             <div class="wrap">
             <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Money in and out"
@@ -260,8 +261,11 @@ export class AnalysisPage {
     const minIdx = values.indexOf(Math.min(...values));
     const month = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
     const labels =
-      d.range === 'year'
-        ? pts.filter((p) => p.date.endsWith('-01')).map((p) => ({ x: xAt(p.date), label: month(p.date) }))
+      d.range === 'year' || d.range === 'all'
+        ? pts
+            .filter((p) => p.date.endsWith('-01'))
+            .filter((_, i, a) => i % Math.ceil(a.length / 12) === 0)
+            .map((p) => ({ x: xAt(p.date), label: month(p.date) + (d.period_from.slice(0, 4) !== d.period_to.slice(0, 4) ? ' ' + p.date.slice(2, 4) : '') }))
         : pts
             .filter((_, i) => i % Math.ceil(pts.length / 8) === 0)
             .map((p) => ({ x: xAt(p.date), label: `${+p.date.slice(8)} ${month(p.date)}` }));

@@ -103,7 +103,7 @@ class AccountOverview(BaseModel):
 
 # --- Analytics for a chosen period (last week / month / year of the statement) ---
 
-AnalyticsRange = Literal["week", "month", "year"]
+AnalyticsRange = Literal["week", "month", "year", "all"]
 
 
 class AnalyticsBucket(BaseModel):

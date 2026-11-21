@@ -76,7 +76,7 @@ def overview(ov: AccountOverview = Depends(get_overview)) -> AccountOverview:
 
 @router.get("/analytics", response_model=Analytics)
 def analytics(range: AnalyticsRange = "year", acc: Account = Depends(get_account)) -> Analytics:
-    """Money in/out, balance and spending by category for the last week, month (30 days) or year."""
+    """Money in/out, balance and spending by category for the last week, month (30 days), year or all time."""
     return build_analytics(acc.txs, acc.user.opening_balance, range)
 
 
