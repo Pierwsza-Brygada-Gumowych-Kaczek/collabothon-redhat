@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { BankService } from '../bank.service';
 import { AgentSourceComponent } from '../agent-source.component';
 import { AgentErrorComponent } from '../agent-error.component';
@@ -52,7 +52,9 @@ const LEFT = 50;
 
             @if (rateChart(); as c) {
               <h3 class="sub">Exchange rate on each payment date</h3>
-              <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Exchange rate per payment">
+              <div class="chart-wrap">
+              <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Exchange rate per payment"
+                   (mousemove)="onMove($event)" (mouseleave)="hover.set(null)">
                 @for (t of c.ticks; track t.v) {
                   <line [attr.x1]="LEFT" [attr.x2]="W" [attr.y1]="t.y" [attr.y2]="t.y" class="grid-line" />
                   <text x="2" [attr.y]="t.y + 4" class="axis">{{ t.v.toFixed(3) }}</text>
@@ -61,10 +63,27 @@ const LEFT = 50;
                 <text [attr.x]="W - 4" [attr.y]="c.lockY - 5" class="axis end">locked at first rate (forward)</text>
                 <path [attr.d]="c.line" class="rate" />
                 @for (p of c.points; track p.x) {
-                  <circle [attr.cx]="p.x" [attr.cy]="p.y" r="4" class="pt"><title>{{ p.label }}: {{ p.rate }}</title></circle>
+                  <circle [attr.cx]="p.x" [attr.cy]="p.y" r="4" class="pt" />
                   <text [attr.x]="p.x" [attr.y]="H + 16" class="axis mid">{{ p.label }}</text>
                 }
+                @if (hovered(); as h) {
+                  <line [attr.x1]="h.x" [attr.x2]="h.x" [attr.y1]="PAD" [attr.y2]="H - PAD" class="guide" />
+                  <circle [attr.cx]="h.x" [attr.cy]="h.y" r="6" class="dot-active" />
+                }
+                <!-- invisible layer that catches the mouse over the whole plot -->
+                <rect [attr.x]="LEFT" y="0" [attr.width]="W - LEFT" [attr.height]="H" class="catch" />
               </svg>
+              @if (hovered(); as h) {
+                <div class="ctip" [style.left.%]="(h.x / W) * 100" [style.top.%]="(h.y / (H + 22)) * 100" [class.flip]="h.x > W * 0.7">
+                  <div class="t-period">{{ h.date }}</div>
+                  <div class="t-row"><span>Rate (EUR per {{ e.currency }})</span><b>{{ h.rate }}</b></div>
+                  <div class="t-row"><span>Payment</span><b>{{ h.amount.toLocaleString('en-GB') }} {{ e.currency }}</b></div>
+                  <div class="t-row"><span>Cost in euros</span><b>{{ eurShort(h.amountEur) }}</b></div>
+                  <div class="t-row"><span>Extra vs locked rate</span>
+                    <b [class.neg]="h.extra > 0.5" [class.pos]="h.extra < -0.5">{{ h.extra > 0 ? '+' : '' }}{{ eurShort(h.extra) }}</b></div>
+                </div>
+              }
+              </div>
               <p class="muted note">
                 With an FX forward at the first payment's rate, all payments would have cost
                 <b>{{ eurShort(e.cost_with_forward_at_first_rate) }}</b> instead of <b>{{ eurShort(e.total_eur) }}</b> —
@@ -168,6 +187,27 @@ export class FxPage {
   readonly W = W;
   readonly H = H;
   readonly LEFT = LEFT;
+  readonly PAD = PAD;
+  readonly hover = signal<number | null>(null);
+
+  /** Map the mouse position to the nearest payment. */
+  onMove(ev: MouseEvent): void {
+    const c = this.rateChart();
+    if (!c) return;
+    const r = (ev.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const x = ((ev.clientX - r.left) / r.width) * W;
+    let best = 0;
+    for (let i = 1; i < c.points.length; i++) {
+      if (Math.abs(c.points[i].x - x) < Math.abs(c.points[best].x - x)) best = i;
+    }
+    this.hover.set(best);
+  }
+
+  readonly hovered = computed(() => {
+    const i = this.hover();
+    const c = this.rateChart();
+    return i === null || !c ? null : (c.points[i] ?? null);
+  });
 
   readonly rateChart = computed(() => {
     const e = this.bank.fx()?.exposures[0];
@@ -184,6 +224,11 @@ export class FxPage {
       y: y(p.rate),
       rate: p.rate,
       label: new Date(p.date).toLocaleString('en-GB', { month: 'short' }),
+      date: new Date(p.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      amount: p.amount,
+      amountEur: p.amount_eur,
+      // What this payment cost beyond the rate of the first payment (the forward rate).
+      extra: p.amount_eur - p.amount * lock,
     }));
     return {
       points,

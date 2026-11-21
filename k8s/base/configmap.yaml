@@ -7,8 +7,10 @@ data:
   LOG_LEVEL: "INFO"
   # Frontend and API share one address (nginx proxies /api), so no CORS origins are needed.
   CORS_ORIGINS: '[]'
-  # In-cluster address of the OpenShift AI InferenceService (KServe, vLLM) — change to yours:
-  OPENSHIFT_AI_URL: "http://granite-predictor.my-ai-project.svc.cluster.local:8080/v1"
+  # In-cluster address of the model the organisers provisioned in namespace "my-first-model".
+  # Replace <model> with its InferenceService name (oc get inferenceservice -n my-first-model, or
+  # Console: Networking > Services in project my-first-model — the "<name>-predictor" service).
+  OPENSHIFT_AI_URL: "http://<model>-predictor.my-first-model.svc.cluster.local:8080/v1"
   OPENSHIFT_AI_MODEL: "granite"
   OPENSHIFT_AI_VERIFY_SSL: "true"
   OPENSHIFT_AI_TIMEOUT: "90"

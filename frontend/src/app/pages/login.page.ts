@@ -11,7 +11,7 @@ import { BankService } from '../bank.service';
     <div class="wrap">
       <form class="card login" (ngSubmit)="submit()">
         <video class="duck" src="/duck.mp4" autoplay loop muted playsinline aria-hidden="true" [muted]="true"></video>
-        <h1>Sign in to DuckBank</h1>
+        <h1>Sign in to Duck CFO</h1>
         <p class="muted">Business banking with your AI CFO.</p>
 
         @if (expired) {

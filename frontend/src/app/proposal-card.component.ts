@@ -29,8 +29,8 @@ import { RISK_INFO, duration, eurShort, loanInterest, loanPayment, pct, projecti
           </div>
           <div class="fact cost">
             <span class="q">Total interest cost</span>
-            <strong>{{ eurShort(interest().min) }} – {{ eurShort(interest().max) }}</strong>
-            <small>{{ pct(p.return_min_pct) }}–{{ pct(p.return_max_pct) }}% a year (indicative)</small>
+            <strong><span class="upto">up to</span> {{ eurShort(interest().max) }}</strong>
+            <small>up to {{ pct(p.return_max_pct) }}% a year (indicative)</small>
           </div>
           <div class="fact">
             <span class="q">Risk</span>
@@ -54,8 +54,12 @@ import { RISK_INFO, duration, eurShort, loanInterest, loanPayment, pct, projecti
           </div>
           <div class="fact gain">
             <span class="q">You could earn</span>
-            <strong>{{ gainText() }}</strong>
-            <small>{{ pct(p.return_min_pct) }}–{{ pct(p.return_max_pct) }}% a year</small>
+            @if (proj().gainMax > 0) {
+              <strong><span class="upto">up to</span> +{{ eurShort(proj().gainMax) }}</strong>
+            } @else {
+              <strong>€0</strong>
+            }
+            <small>up to {{ pct(p.return_max_pct) }}% a year</small>
           </div>
           <div class="fact">
             <span class="q">Risk</span>
@@ -77,7 +81,7 @@ import { RISK_INFO, duration, eurShort, loanInterest, loanPayment, pct, projecti
         </div>
         @if (!isLoan()) {
           <p class="end">
-            At the end you could have about <b>{{ eurShort(pr.endMin) }}–{{ eurShort(pr.endMax) }}</b>.
+            At the end you could have up to <b>{{ eurShort(pr.endMax) }}</b>.
           </p>
         }
       }
@@ -101,6 +105,7 @@ import { RISK_INFO, duration, eurShort, loanInterest, loanPayment, pct, projecti
     .fact.gain strong { color: var(--green); }
     .fact.cost strong { color: var(--blue); }
     small { font-size: .75rem; color: var(--text-2); line-height: 1.3; }
+    .upto { font-size: .75rem; font-weight: 500; color: var(--muted); margin-right: .15rem; }
     .meter { display: flex; align-items: center; gap: 3px; }
     .meter span { width: 18px; height: 8px; border-radius: 3px; background: var(--track); }
     .meter span.on { background: var(--risk); }
@@ -132,10 +137,5 @@ export class ProposalCardComponent {
   readonly monthly = computed(() => {
     const p = this.proposal();
     return loanPayment(p.amount_eur, p.horizon_months, (p.return_min_pct + p.return_max_pct) / 2);
-  });
-  readonly gainText = computed(() => {
-    const { gainMin, gainMax } = this.proj();
-    if (gainMax <= 0) return '€0';
-    return `+${eurShort(gainMin)} – ${eurShort(gainMax)}`;
   });
 }

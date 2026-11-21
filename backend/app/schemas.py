@@ -30,6 +30,7 @@ class ChatResponse(BaseModel):
 
 class User(BaseModel):
     id: str
+    username: str = ""
     name: str
     business: str
     email: str
@@ -96,49 +97,65 @@ class AccountOverview(BaseModel):
     monthly: list[MonthlySummary]
     daily_balance: list[DailyBalance]
     categories: list[CategoryTotal]
+    # Spending by category in the latest month of the statement (positive amounts, largest first).
+    month_categories: list[CategoryTotal] = []
 
 
-class BudgetCreate(BaseModel):
-    """A budget the user adds: track a category and/or merchants, with an optional limit."""
+# --- Goals (savings targets with AI-proposed ways to reach them) ---
 
+GoalFrequency = Literal["one-off", "weekly", "monthly", "quarterly"]
+
+
+class GoalPlanRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    target: float = Field(gt=0, le=100_000_000)
+    saved: float = Field(default=0, ge=0, le=100_000_000)
+    # Wish to reach the goal within N months; empty = the AI proposes payments the account can afford.
+    deadline_months: int | None = Field(default=None, ge=1, le=600)
+
+
+class GoalWay(BaseModel):
+    """One way to fill a goal. Numbers (duration, total paid, interest) are calculated, not written by the AI."""
+
+    id: str
+    title: str
+    category: str = "Savings"
+    frequency: GoalFrequency = "monthly"
+    amount_eur: float = Field(ge=0)  # per payment (a single deposit for "one-off")
+    payments: int = 1
+    months: int | None = None  # None = the goal is not reached within 50 years
+    total_paid: float = 0
+    expected_interest: float = 0
+    risk: Risk = "low"
+    return_min_pct: float = 0
+    return_max_pct: float = 0
+    plain_explanation: str = ""
+    rationale: str = ""
+    # Months sooner than plain regular saving of the same monthly amount (negative = later);
+    # None for the baseline itself.
+    months_faster: int | None = None
+
+
+class GoalCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     description: str = Field(default="", max_length=120)
-    category: str | None = None
-    merchants: list[str] = Field(default_factory=list, max_length=10)
-    # Monthly limit in EUR; empty = suggested from history.
-    limit: float | None = Field(default=None, gt=0, le=10_000_000)
+    target: float = Field(gt=0, le=100_000_000)
+    saved: float = Field(default=0, ge=0, le=100_000_000)
+    deadline_months: int | None = Field(default=None, ge=1, le=600)
     photo: str | None = None
+    # One of the preset icon keys (see GOAL_ICONS in services/goals.py), or none.
+    icon: str | None = Field(default=None, max_length=30)
+    way: GoalWay | None = None
 
 
-class BudgetDefinition(BudgetCreate):
+class GoalDefinition(GoalCreate):
     id: str
+    created: date
 
 
-class BudgetOption(BaseModel):
-    value: str
-    suggested_limit: float
-
-
-class BudgetOptions(BaseModel):
-    categories: list[BudgetOption]
-    merchants: list[BudgetOption]
-    photos: list[str]
-
-
-class Budget(BaseModel):
-    id: str
-    name: str
-    description: str
-    category: str | None = None
-    merchants: list[str] = []
-    photo: str | None = None
-    custom_limit: bool = False
-    limit: float
-    spent: float
+class Goal(GoalDefinition):
     remaining: float
-    period_start: date
-    reset_date: date
-    reset_in_days: int
+    percent: float
 
 
 class AgentMeta(BaseModel):
@@ -152,6 +169,12 @@ class AgentMeta(BaseModel):
     warnings: list[str] = []
     # Set when the model could not be used — the page shows it instead of AI recommendations.
     error: str | None = None
+
+
+class GoalPlanResponse(AgentMeta):
+    ways: list[GoalWay]
+    # The standard alternative the ways are compared with: setting aside the same sum every month.
+    baseline: GoalWay | None = None
 
 
 # --- Investment agent ---

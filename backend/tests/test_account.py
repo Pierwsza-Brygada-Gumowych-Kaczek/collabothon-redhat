@@ -7,7 +7,6 @@ import respx
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.routers.account import get_today
 from tests.conftest import logged_in
 
 MODEL_URL = "http://localhost:8080/v1"
@@ -46,19 +45,6 @@ def test_transactions_newest_first_and_filter():
     assert page["total"] == 1125
     assert page["items"][0]["date"] == "2025-12-31"
     assert rent["total"] == 12
-
-
-def test_budgets_progress_and_reset():
-    app = create_app()
-    app.dependency_overrides[get_today] = lambda: date(2026, 11, 20)
-    with logged_in(app) as client:
-        budgets = {b["id"]: b for b in client.get("/api/budgets").json()}
-    assert set(budgets) == {"food", "beverages", "utilities", "rent"}
-    rent = budgets["rent"]
-    assert rent["spent"] == 3800  # rent is debited on the 1st
-    assert rent["remaining"] == rent["limit"] - 3800
-    assert rent["reset_date"] == "2026-12-01"
-    assert rent["reset_in_days"] == 11
 
 
 # --- Investment agent ---
@@ -256,56 +242,113 @@ def test_forecast_endpoint_is_calculated_without_ai():
     assert r["scheduled"] and all("expected_in" in p for p in r["forecast"])
 
 
-# --- Budgets: add / delete ---
-
-
 @pytest.fixture
-def budget_app():
-    app = create_app()
-    app.dependency_overrides[get_today] = lambda: date(2026, 11, 20)
-    return app
+def plain_app():
+    return create_app()
 
 
-def test_add_and_delete_budget(budget_app):
-    with logged_in(budget_app) as client:
-        opts = client.get("/api/budgets/options").json()
-        assert any(o["value"] == "Payroll" for o in opts["categories"])
-        assert any("La Vino" in o["value"] for o in opts["merchants"])
-
-        r = client.post("/api/budgets", json={"name": "Staff wages", "category": "Payroll", "limit": 9000})
-        assert r.status_code == 201
-        b = r.json()
-        assert b["id"] == "staff-wages" and b["limit"] == 9000 and b["custom_limit"] is True
-        assert b["spent"] == 0 and b["remaining"] == 9000  # salaries are paid on the 28th, "today" is the 20th
-        ids = [x["id"] for x in client.get("/api/budgets").json()]
-        assert ids[-1] == "staff-wages" and len(ids) == 5
-
-        assert client.delete("/api/budgets/staff-wages").status_code == 204
-        assert client.delete("/api/budgets/staff-wages").status_code == 404
-        assert len(client.get("/api/budgets").json()) == 4
+# --- Goals ---
 
 
-def test_budget_needs_something_to_track_and_suggests_limit(budget_app):
-    with logged_in(budget_app) as client:
-        assert client.post("/api/budgets", json={"name": "Nothing"}).status_code == 422
-        r = client.post("/api/budgets", json={"name": "Market", "merchants": ["Wholesale Market"]}).json()
-    assert r["custom_limit"] is False and r["limit"] > 0
-
-
-def test_edit_budget_name_limit_and_own_photo(budget_app):
-    photo = "data:image/jpeg;base64,/9j/4AAQSkZJRg=="
-    with logged_in(budget_app) as client:
-        r = client.put("/api/budgets/rent", json={
-            "name": "Office rent", "description": "New lease", "category": "Rent", "limit": 5000, "photo": photo,
-        })
+def test_goal_plan_calculates_duration_and_cost(demo_mode):
+    with logged_in(create_app()) as client:
+        r = client.post("/api/goals/plan", json={"name": "New oven", "target": 6000, "saved": 600})
         assert r.status_code == 200
-        b = r.json()
-        assert b["id"] == "rent" and b["name"] == "Office rent" and b["limit"] == 5000 and b["photo"] == photo
-        assert next(x for x in client.get("/api/budgets").json() if x["id"] == "rent")["name"] == "Office rent"
+        plan = r.json()
+        assert plan["source"] == "demo" and len(plan["ways"]) >= 3
+        for w in plan["ways"]:
+            if w["months"] is not None:
+                # What is paid in plus interest and the savings so far reaches the target.
+                assert w["total_paid"] + w["expected_interest"] + 600 >= 6000 - 1
 
-        bad = client.put("/api/budgets/rent", json={"name": "x", "category": "Rent", "photo": "http://evil/x.png"})
-        assert bad.status_code == 422
-        assert client.put("/api/budgets/nope", json={"name": "x", "category": "Rent"}).status_code == 404
+        with_deadline = client.post(
+            "/api/goals/plan", json={"name": "New oven", "target": 6000, "saved": 0, "deadline_months": 12}
+        ).json()
+        monthly = next(w for w in with_deadline["ways"] if w["frequency"] == "monthly")
+        assert monthly["months"] <= 12 and 450 < monthly["amount_eur"] < 520
+
+        # Every plan is compared with plain regular saving (same monthly sum, no interest).
+        base = with_deadline["baseline"]
+        assert base["id"] == "baseline" and base["months"] == 12 and base["total_paid"] == 6000
+        assert base["amount_eur"] == 500 and base["expected_interest"] == 0
+        for w in with_deadline["ways"]:
+            assert w["months_faster"] is not None and w["months_faster"] >= 0  # interest never makes it slower
+        assert plan["baseline"]["months"] > 0 and all("months_faster" in w for w in plan["ways"])
+
+
+def test_goal_icon_is_validated_and_saved(plain_app):
+    with logged_in(plain_app) as client:
+        r = client.post("/api/goals", json={"name": "Oven", "target": 6000, "icon": "chef-hat"})
+        assert r.status_code == 201 and r.json()["icon"] == "chef-hat"
+        assert client.get("/api/goals").json()[0]["icon"] == "chef-hat"
+        assert client.post("/api/goals", json={"name": "Bad", "target": 10, "icon": "<script>"}).status_code == 422
+        assert client.put("/api/goals/oven", json={"name": "Oven", "target": 6000}).json()["icon"] is None
+
+
+def test_goal_add_edit_delete(plain_app):
+    with logged_in(plain_app) as client:
+        way = {"id": "way-1", "title": "Save monthly", "frequency": "monthly", "amount_eur": 250, "months": 24}
+        r = client.post("/api/goals", json={"name": "Oven", "target": 6000, "saved": 1500, "way": way})
+        assert r.status_code == 201
+        g = r.json()
+        assert g["id"] == "oven" and g["percent"] == 25.0 and g["remaining"] == 4500 and g["way"]["months"] == 24
+
+        r = client.put("/api/goals/oven", json={"name": "Big oven", "target": 8000, "saved": 2000,
+                                               "photo": "data:image/jpeg;base64,/9j/4AAQ"})
+        assert r.status_code == 200 and r.json()["name"] == "Big oven" and r.json()["way"] is None
+        assert client.put("/api/goals/oven", json={"name": "x", "target": 1, "photo": "http://evil/x.png"}).status_code == 422
+        assert client.put("/api/goals/nope", json={"name": "x", "target": 1}).status_code == 404
+
+        assert [x["id"] for x in client.get("/api/goals").json()] == ["oven"]
+        assert client.delete("/api/goals/oven").status_code == 204
+        assert client.get("/api/goals").json() == []
+
+
+def test_goal_payments_are_part_of_the_forecast(plain_app):
+    with logged_in(plain_app) as client:
+        before = client.get("/api/forecast?days=120").json()
+        way = {"id": "way-1", "title": "Save monthly", "frequency": "monthly", "amount_eur": 500,
+               "payments": 3, "months": 3}
+        client.post("/api/goals", json={"name": "Oven", "target": 1500, "way": way})
+        after = client.get("/api/forecast?days=120").json()
+
+        flows = [f for f in after["scheduled"] if f["label"] == "Goal: Oven"]
+        assert len(flows) == 3 and all(f["amount"] == -500 for f in flows)
+        assert all(f["date"].endswith("-01") for f in flows)
+        # Balance after the last payment is exactly EUR 1,500 lower than without the goal.
+        assert round(before["forecast"][-1]["balance"] - after["forecast"][-1]["balance"], 2) == 1500
+        assert not [f for f in before["scheduled"] if f["label"].startswith("Goal:")]
+
+
+def test_overview_has_latest_month_spending_by_category(plain_app):
+    with logged_in(plain_app) as client:
+        o = client.get("/api/account/overview").json()
+    cats = o["month_categories"]
+    assert cats and all(c["amount"] > 0 for c in cats)
+    assert cats == sorted(cats, key=lambda c: -c["amount"])
+    assert round(sum(c["amount"] for c in cats), 2) == o["monthly"][-1]["expenses"]
+
+
+def test_profile_update_and_password_change():
+    app = create_app()
+    with logged_in(app) as client:
+        me = client.get("/api/auth/me").json()
+        assert me["username"] == "demo"
+
+        r = client.put("/api/auth/me", json={"name": "Anna Nowak", "business": "Trattoria", "email": "anna@example.com"})
+        assert r.status_code == 200 and r.json()["name"] == "Anna Nowak" and r.json()["initials"] == "AN"
+        assert client.get("/api/auth/me").json()["business"] == "Trattoria"
+        assert client.put("/api/auth/me", json={"name": "  ", "email": ""}).status_code == 422
+        assert client.put("/api/auth/me", json={"name": "A", "email": "not-an-email"}).status_code == 422
+
+        wrong = client.post("/api/auth/password", json={"current_password": "nope", "new_password": "longenough1"})
+        assert wrong.status_code == 403
+        assert client.post("/api/auth/password", json={"current_password": "demo", "new_password": "short"}).status_code == 422
+        assert client.post("/api/auth/password", json={"current_password": "demo", "new_password": "longenough1"}).status_code == 204
+
+    with TestClient(app) as client:
+        assert client.post("/api/auth/login", json={"username": "demo", "password": "demo"}).status_code == 401
+        assert client.post("/api/auth/login", json={"username": "demo", "password": "longenough1"}).status_code == 200
 
 
 # --- Login & persistence ---
@@ -314,24 +357,24 @@ def test_edit_budget_name_limit_and_own_photo(budget_app):
 def test_requires_login():
     with TestClient(create_app()) as client:
         assert client.get("/api/account/overview").status_code == 401
-        assert client.get("/api/budgets").status_code == 401
+        assert client.get("/api/goals").status_code == 401
         bad = client.post("/api/auth/login", json={"username": "demo", "password": "nope"})
         assert bad.status_code == 401
 
 
-def test_login_logout_and_budgets_survive_logout():
+def test_login_logout_and_goals_survive_logout():
     app = create_app()
     with TestClient(app) as client:
         r = client.post("/api/auth/login", json={"username": "Demo ", "password": "demo"})
         assert r.status_code == 200 and r.json()["name"] == "Vincenzo Amalfi"
         assert "duckbank_session" in client.cookies
-        client.post("/api/budgets", json={"name": "Taxes", "category": "Taxes", "limit": 2000})
+        client.post("/api/goals", json={"name": "Oven", "target": 2000})
         assert client.post("/api/auth/logout").status_code == 204
         assert client.get("/api/me").status_code == 401
 
         client.post("/api/auth/login", json={"username": "demo", "password": "demo"})
-        names = [b["name"] for b in client.get("/api/budgets").json()]
-        assert "Taxes" in names  # stored in the database, not in the session
+        names = [g["name"] for g in client.get("/api/goals").json()]
+        assert "Oven" in names  # stored in the database, not in the session
 
 
 def test_demo_user_and_transactions_are_stored_in_database():

@@ -17,9 +17,9 @@ import statistics
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from app.schemas import CreditFacility, ForecastPoint, LiquidityResponse, ScheduledFlow, TaxFacts
+from app.schemas import CreditFacility, ForecastPoint, GoalDefinition, LiquidityResponse, ScheduledFlow, TaxFacts
 from app.services.agent_base import AgentUnavailable, eur, num, run_agent, str_list
-from app.services import demo
+from app.services import demo, goals as goals_svc
 from app.services.openshift_ai import OpenShiftAIClient
 from app.services.statement import (
     CAT_PAYROLL,
@@ -70,8 +70,10 @@ def forecast(
     opening: float,
     days: int,
     tax: TaxFacts | None = None,
+    goals: list[GoalDefinition] | None = None,
 ) -> tuple[list[ForecastPoint], list[ScheduledFlow]]:
     as_of = txs[-1].booking_date
+    goal_by_day = goals_svc.goal_flows(goals or [], as_of, days)
     balance = daily_balances(txs, opening)[as_of]
 
     recurring: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
@@ -137,6 +139,9 @@ def forecast(
                 label += " (adjusted)"
             balance += amount
             scheduled.append(ScheduledFlow(date=day, label=label, amount=round(amount, 2)))
+        for label, amount in goal_by_day.get(day, []):
+            balance -= amount
+            scheduled.append(ScheduledFlow(date=day, label=label, amount=-round(amount, 2)))
         if tax and (day.month, day.day) == TAX_BACKPAYMENT_DUE:
             balance -= tax.estimated_additional_payment
             scheduled.append(ScheduledFlow(date=day, label="Expected tax back-payment (assumed date)",
@@ -189,6 +194,12 @@ def build_context(
         f"yes — expected back-payment {eur(tax.estimated_additional_payment)} and higher prepayments"
         if tax else "no (current prepayments only)"
     )
+    goal_out = [s for s in res.scheduled if s.label.startswith("Goal: ")]
+    goal_line = (
+        f"Savings goals included: {eur(-sum(s.amount for s in goal_out))} is set aside for "
+        f"{', '.join(sorted({s.label[6:] for s in goal_out}))} within the horizon (already in the forecast)."
+        if goal_out else "No savings goals are scheduled."
+    )
     big = sorted(res.scheduled, key=lambda s: s.amount)[:8]
     flows = "\n".join(f"- {s.date}: {s.label} {eur(s.amount)}" for s in big)
     return f"""Forecast as of {res.as_of}, horizon {res.days} days.
@@ -200,6 +211,7 @@ Last year: lowest balance {eur(last_year_min)}, {last_year_overdraft_days} days 
 estimated unarranged-overdraft interest {eur(res.overdraft_cost_last_year)}.
 The restaurant closes for 3 weeks every June (no revenue).
 Tax changes included in the forecast: {tax_line}
+{goal_line}
 Largest scheduled outflows in the horizon:
 {flows}"""
 
@@ -213,9 +225,10 @@ async def generate(
     last_year_min: float,
     last_year_overdraft_days: int,
     demo_fallback: bool = False,
+    goals: list[GoalDefinition] | None = None,
 ) -> LiquidityResponse:
     """The forecast is calculated; the outlook text and credit facilities come from the model only."""
-    points, flows = forecast(txs, opening, days, tax)
+    points, flows = forecast(txs, opening, days, tax, goals)
     low = min(points, key=lambda p: p.balance)
     base = LiquidityResponse(
         source="unavailable",

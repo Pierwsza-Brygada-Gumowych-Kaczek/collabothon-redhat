@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
 
     # --- General ---
-    app_name: str = "DuckBank API"
+    app_name: str = "Duck CFO API"
     log_level: str = "INFO"
     cors_origins: list[str] = ["http://localhost:4200"]
 

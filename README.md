@@ -1,4 +1,4 @@
-# DuckBank — Autonomous CFO for SMEs
+# Duck CFO — Autonomous CFO for SMEs
 
 > An AI-powered CFO assistant for small business owners. It watches the company's bank account, spots financial risks before they hurt, and explains — in plain English — what to do next. The owner always stays in control.
 
@@ -16,7 +16,7 @@ Small and medium-sized enterprises are usually run by an owner who is also the f
 
 ## The solution
 
-DuckBank is an **agentic CFO assistant**. It reads the company's bank statement and runs specialised agents. Each one turns raw transactions into a clear, explainable recommendation for a non-expert:
+Duck CFO is an **agentic CFO assistant**. It reads the company's bank statement and runs specialised agents. Each one turns raw transactions into a clear, explainable recommendation for a non-expert:
 
 | Agent | What it does | Typical output |
 |---|---|---|
@@ -25,7 +25,7 @@ DuckBank is an **agentic CFO assistant**. It reads the company's bank statement 
 | **Tax agent** | Builds a schedule of advance tax payments | Recommends prepayment amounts and legal optimisation opportunities |
 | **Investment agent** | Looks at the liquidity that is really free to invest | Suggests fixed-term deposits, money-market funds or capex financing |
 
-Alongside the agents, the app shows the balance forecast, transactions, monthly summaries, spending categories and monthly budgets, so the owner sees the full picture.
+Alongside the agents, the app shows the balance forecast, transactions, monthly summaries, spending categories and savings goals, so the owner sees the full picture.
 
 ### Demo business
 

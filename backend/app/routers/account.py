@@ -2,7 +2,6 @@
 
 import re
 from dataclasses import dataclass
-from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
@@ -13,9 +12,10 @@ from app.routers.auth import to_user
 from app.schemas import (
     AccountOverview,
     AiStatus,
-    Budget,
-    BudgetCreate,
-    BudgetOptions,
+    Goal,
+    GoalCreate,
+    GoalPlanRequest,
+    GoalPlanResponse,
     ForecastResponse,
     FxResponse,
     InsightsResponse,
@@ -24,9 +24,8 @@ from app.schemas import (
     TransactionPage,
     User,
 )
-from app.services import fx, insights, liquidity, repository, tax
+from app.services import fx, goals, insights, liquidity, repository, tax
 from app.services.auth import current_user
-from app.services.budgets import PHOTOS, build_budgets, build_options
 from app.services.statement import Transaction, build_overview, to_out
 
 router = APIRouter(prefix="/api", tags=["account"])
@@ -47,10 +46,6 @@ def get_account(user: UserRow = Depends(current_user), db: Session = Depends(get
 
 def get_overview(acc: Account = Depends(get_account)) -> AccountOverview:
     return build_overview(acc.txs, acc.user.opening_balance)
-
-
-def get_today() -> date:
-    return date.today()
 
 
 def _cache(request: Request, user_id: int) -> dict:
@@ -91,82 +86,100 @@ def transactions(
 
 
 @router.get("/forecast", response_model=ForecastResponse)
-def balance_forecast(days: int = Query(200, ge=7, le=365), acc: Account = Depends(get_account)) -> ForecastResponse:
-    """Calculated daily balance forecast (no AI call) for the Overview chart."""
-    points, flows = liquidity.forecast(acc.txs, acc.user.opening_balance, days)
+def balance_forecast(
+    days: int = Query(200, ge=7, le=365), acc: Account = Depends(get_account), db: Session = Depends(get_db)
+) -> ForecastResponse:
+    """Calculated daily balance forecast (no AI call) for the Overview chart, incl. payments into goals."""
+    points, flows = liquidity.forecast(
+        acc.txs, acc.user.opening_balance, days, goals=repository.list_goals(db, acc.user.id)
+    )
     return ForecastResponse(as_of=acc.txs[-1].booking_date, days=days, forecast=points, scheduled=flows)
-
-
-# --- Budgets (stored per user in the database) ---------------------------------------------
 
 
 MAX_PHOTO_CHARS = 1_500_000  # ~1 MB picture as a base64 data URL
 _PHOTO_URL = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$")
 
 
-def _clean_budget(body: BudgetCreate) -> None:
-    """Normalise and validate a budget payload (shared by add and edit)."""
+def _check_photo(body: GoalCreate) -> None:
+    """An uploaded image as a small data URL (or none)."""
+    if not body.photo:
+        body.photo = None
+    elif len(body.photo) > MAX_PHOTO_CHARS or not _PHOTO_URL.match(body.photo):
+        raise HTTPException(422, "The picture must be a PNG, JPEG, WebP or GIF image of up to 1 MB.")
+
+
+# --- Goals (savings targets; the AI proposes ways to reach them) --------------------------
+
+
+@router.get("/goals", response_model=list[Goal])
+def list_goals(user: UserRow = Depends(current_user), db: Session = Depends(get_db)) -> list[Goal]:
+    return goals.build_goals(repository.list_goals(db, user.id))
+
+
+@router.post("/goals/plan", response_model=GoalPlanResponse)
+async def plan_goal(
+    body: GoalPlanRequest,
+    request: Request,
+    acc: Account = Depends(get_account),
+    ov: AccountOverview = Depends(get_overview),
+    settings: Settings = Depends(get_settings),
+) -> GoalPlanResponse:
+    """Ways to reach a goal: monthly saving, deposits, funds… with duration and cost calculated."""
     body.name = body.name.strip()
     if not body.name:
-        raise HTTPException(422, "Give the budget a name.")
-    body.merchants = [m.strip() for m in body.merchants if m.strip()]
-    body.category = (body.category or "").strip() or None
-    if not body.category and not body.merchants:
-        raise HTTPException(422, "Choose a category or a merchant to track.")
-    if body.photo and body.photo not in PHOTOS:
-        if len(body.photo) > MAX_PHOTO_CHARS or not _PHOTO_URL.match(body.photo):
-            raise HTTPException(422, "The picture must be a PNG, JPEG, WebP or GIF image of up to 1 MB.")
-    elif not body.photo:
-        body.photo = None
+        raise HTTPException(422, "Give the goal a name.")
+    return await goals.plan(request.app.state.ai, body, ov, acc.user.business, settings.agents_demo_fallback)
 
 
-@router.get("/budgets", response_model=list[Budget])
-def budgets(
-    acc: Account = Depends(get_account), db: Session = Depends(get_db), today: date = Depends(get_today)
-) -> list[Budget]:
-    """Monthly budgets: limit, spent, remaining, days until reset."""
-    return build_budgets(acc.txs, repository.list_budgets(db, acc.user.id), today)
+def _forget_liquidity(request: Request, user_id: int) -> None:
+    """Goals change the forecast, so cached liquidity answers are stale."""
+    cache = _cache(request, user_id)
+    for key in [k for k in cache if k.startswith("liquidity")]:
+        del cache[key]
 
 
-@router.get("/budgets/options", response_model=BudgetOptions)
-def budget_options(acc: Account = Depends(get_account)) -> BudgetOptions:
-    """Categories and merchants a new budget can track, with suggested monthly limits."""
-    return build_options(acc.txs)
+def _clean_goal(body: GoalCreate) -> None:
+    body.name = body.name.strip()
+    if not body.name:
+        raise HTTPException(422, "Give the goal a name.")
+    if body.icon and body.icon not in goals.GOAL_ICONS:
+        raise HTTPException(422, "Choose one of the available icons.")
+    body.icon = body.icon or None
+    _check_photo(body)
 
 
-@router.post("/budgets", response_model=Budget, status_code=201)
-def add_budget(
-    body: BudgetCreate,
-    acc: Account = Depends(get_account),
+@router.post("/goals", response_model=Goal, status_code=201)
+def add_goal(
+    body: GoalCreate, request: Request, user: UserRow = Depends(current_user), db: Session = Depends(get_db)
+) -> Goal:
+    _clean_goal(body)
+    _forget_liquidity(request, user.id)
+    return goals.build_goals([repository.add_goal(db, user.id, body)])[0]
+
+
+@router.put("/goals/{goal_id}", response_model=Goal)
+def update_goal(
+    goal_id: str,
+    body: GoalCreate,
+    request: Request,
+    user: UserRow = Depends(current_user),
     db: Session = Depends(get_db),
-    today: date = Depends(get_today),
-) -> Budget:
-    """Add a budget. It must track a category or at least one merchant."""
-    _clean_budget(body)
-    created = repository.add_budget(db, acc.user.id, body)
-    return build_budgets(acc.txs, [created], today)[0]
-
-
-@router.put("/budgets/{budget_id}", response_model=Budget)
-def update_budget(
-    budget_id: str,
-    body: BudgetCreate,
-    acc: Account = Depends(get_account),
-    db: Session = Depends(get_db),
-    today: date = Depends(get_today),
-) -> Budget:
-    """Edit every setting of a budget: name, description, tracked category/merchants, limit, picture."""
-    _clean_budget(body)
-    updated = repository.update_budget(db, acc.user.id, budget_id, body)
+) -> Goal:
+    _clean_goal(body)
+    _forget_liquidity(request, user.id)
+    updated = repository.update_goal(db, user.id, goal_id, body)
     if updated is None:
-        raise HTTPException(404, "Budget not found")
-    return build_budgets(acc.txs, [updated], today)[0]
+        raise HTTPException(404, "Goal not found")
+    return goals.build_goals([updated])[0]
 
 
-@router.delete("/budgets/{budget_id}", status_code=204)
-def delete_budget(budget_id: str, user: UserRow = Depends(current_user), db: Session = Depends(get_db)) -> Response:
-    if not repository.delete_budget(db, user.id, budget_id):
-        raise HTTPException(404, "Budget not found")
+@router.delete("/goals/{goal_id}", status_code=204)
+def delete_goal(
+    goal_id: str, request: Request, user: UserRow = Depends(current_user), db: Session = Depends(get_db)
+) -> Response:
+    _forget_liquidity(request, user.id)
+    if not repository.delete_goal(db, user.id, goal_id):
+        raise HTTPException(404, "Goal not found")
     return Response(status_code=204)
 
 
@@ -221,6 +234,7 @@ async def liquidity_forecast(
     acc: Account = Depends(get_account),
     ov: AccountOverview = Depends(get_overview),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> LiquidityResponse:
     """Liquidity agent: cash-flow forecast `days` ahead and proposed credit facilities."""
     cache = _cache(request, acc.user.id)
@@ -230,6 +244,7 @@ async def liquidity_forecast(
         result = await liquidity.generate(
             request.app.state.ai, acc.txs, acc.user.opening_balance, days, facts,
             ov.kpis.min_balance, ov.kpis.overdraft_days, settings.agents_demo_fallback,
+            repository.list_goals(db, acc.user.id),
         )
         return _remember(cache, key, result)
     return cache[key]

@@ -1,0 +1,319 @@
+# Whole Duck CFO stack as ONE file for the OpenShift web console.
+#
+# How to use (no `oc` needed):
+#   1. Console -> select project "pierwsza-brygada-gumowych-kaczek-duckbank".
+#   2. Click the "+" icon in the top bar ("Import YAML"), paste this whole file, press Create.
+#   3. Builds start automatically (Builds -> Builds). When both are Complete the pods start.
+#   4. Edit ConfigMap "backend-config" (OPENSHIFT_AI_URL / OPENSHIFT_AI_MODEL) and Secret
+#      "backend-secret" (OPENSHIFT_AI_TOKEN), then restart the backend (see README of this step).
+#
+# CHANGE BEFORE PASTING: the password "duckbank-change-me" (it appears twice: postgres-credentials
+# and DATABASE_URL — both must be identical). Image paths below contain the project name; if you
+# use another project, replace "pierwsza-brygada-gumowych-kaczek-duckbank" everywhere.
+
+# ---------------------------------------------------------------- Secrets & config
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+type: Opaque
+stringData:
+  database-user: duckbank
+  database-password: duckbank-change-me
+  database-name: duckbank
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secret
+type: Opaque
+stringData:
+  DATABASE_URL: postgresql+psycopg://duckbank:duckbank-change-me@postgres:5432/duckbank
+  # Token of the model endpoint, if it requires one. Empty = no auth.
+  OPENSHIFT_AI_TOKEN: ""
+  DEMO_PASSWORD: demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  LOG_LEVEL: "INFO"
+  CORS_ORIGINS: '[]'
+  # EDIT: URL of the model endpoint, ending in /v1. Until it is correct the app runs in demo mode.
+  OPENSHIFT_AI_URL: "http://llama-32-3b-instruct-predictor.my-first-model.svc.cluster.local:8080/v1"
+  # EDIT: model id as returned by GET <URL>/models (data[].id).
+  OPENSHIFT_AI_MODEL: "llama-32-3b-instruct"
+  OPENSHIFT_AI_VERIFY_SSL: "true"
+  OPENSHIFT_AI_TIMEOUT: "90"
+  OPENSHIFT_AI_JSON_MODE: "true"
+  AGENTS_DEMO_FALLBACK: "true"
+  DB_CONNECT_RETRIES: "60"
+  DB_CONNECT_RETRY_SECONDS: "2"
+  SESSION_DAYS: "7"
+  COOKIE_SECURE: "true"
+  DEMO_USERNAME: "demo"
+---
+# ---------------------------------------------------------------- Image builds from GitHub
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: backend
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: frontend
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: backend
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/Pierwsza-Brygada-Gumowych-Kaczek/collabothon-redhat.git
+      ref: main
+    contextDir: backend
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: backend:latest
+  triggers:
+    - type: ConfigChange
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: frontend
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/Pierwsza-Brygada-Gumowych-Kaczek/collabothon-redhat.git
+      ref: main
+    contextDir: frontend
+  strategy:
+    type: Docker
+    dockerStrategy: {}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: frontend:latest
+  triggers:
+    - type: ConfigChange
+---
+# ---------------------------------------------------------------- PostgreSQL
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    app: postgres
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: quay.io/sclorg/postgresql-16-c9s:latest
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRESQL_USER
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-user } }
+            - name: POSTGRESQL_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-password } }
+            - name: POSTGRESQL_DATABASE
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: database-name } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "pg_isready -h 127.0.0.1 -p 5432 -U \"$POSTGRESQL_USER\" -d \"$POSTGRESQL_DATABASE\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 5432 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+# ---------------------------------------------------------------- Backend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+  annotations:
+    # Roll out automatically whenever a new backend image is built.
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"backend:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"backend\")].image"}]'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: image-registry.openshift-image-registry.svc:5000/pierwsza-brygada-gumowych-kaczek-duckbank/backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+# ---------------------------------------------------------------- Frontend + public route
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"frontend:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"frontend\")].image"}]'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: image-registry.openshift-image-registry.svc:5000/pierwsza-brygada-gumowych-kaczek-duckbank/frontend:latest
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: frontend
+spec:
+  to:
+    kind: Service
+    name: frontend
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

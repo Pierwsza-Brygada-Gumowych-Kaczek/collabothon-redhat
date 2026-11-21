@@ -4,6 +4,7 @@ import { Observable, firstValueFrom, tap } from 'rxjs';
 
 export interface User {
   id: string;
+  username: string;
   name: string;
   business: string;
   email: string;
@@ -58,37 +59,48 @@ export interface AccountOverview {
   monthly: MonthlySummary[];
   daily_balance: { date: string; balance: number }[];
   categories: { name: string; amount: number }[];
+  /** Spending by category in the latest month of the statement. */
+  month_categories: { name: string; amount: number }[];
 }
 
-export interface Budget {
+export type GoalFrequency = 'one-off' | 'weekly' | 'monthly' | 'quarterly';
+
+export interface GoalWay {
   id: string;
-  name: string;
-  description: string;
-  category: string | null;
-  merchants: string[];
-  photo: string | null;
-  custom_limit: boolean;
-  limit: number;
-  spent: number;
-  remaining: number;
-  period_start: string;
-  reset_date: string;
-  reset_in_days: number;
+  title: string;
+  category: string;
+  frequency: GoalFrequency;
+  amount_eur: number;
+  payments: number;
+  months: number | null;
+  total_paid: number;
+  expected_interest: number;
+  risk: 'low' | 'medium' | 'high';
+  return_min_pct: number;
+  return_max_pct: number;
+  plain_explanation: string;
+  rationale: string;
+  /** Versus saving the same monthly sum with no interest; positive = better. Null for the baseline itself. */
+  months_faster?: number | null;
 }
 
-export interface BudgetCreate {
+export interface GoalCreate {
   name: string;
   description?: string;
-  category?: string | null;
-  merchants?: string[];
-  limit?: number | null;
+  target: number;
+  saved: number;
+  deadline_months?: number | null;
   photo?: string | null;
+  icon?: string | null;
+  way?: GoalWay | null;
 }
 
-export interface BudgetOptions {
-  categories: { value: string; suggested_limit: number }[];
-  merchants: { value: string; suggested_limit: number }[];
-  photos: string[];
+export interface Goal extends GoalCreate {
+  id: string;
+  description: string;
+  created: string;
+  remaining: number;
+  percent: number;
 }
 
 /** Common header of every AI agent response. */
@@ -102,6 +114,12 @@ export interface AgentMeta {
 }
 
 export type Risk = 'low' | 'medium' | 'high';
+
+export interface GoalPlan extends AgentMeta {
+  ways: GoalWay[];
+  /** The standard alternative: regular saving with no product. */
+  baseline: GoalWay | null;
+}
 
 export interface InvestmentProposal {
   title: string;
@@ -256,7 +274,7 @@ export class BankService {
 
   readonly user = signal<User | null>(null);
   readonly overview = signal<AccountOverview | null>(null);
-  readonly budgets = signal<Budget[]>([]);
+  readonly goals = signal<Goal[]>([]);
   readonly insights = signal<Insights | null>(null);
   readonly insightsLoading = signal(false);
   readonly taxTips = signal<TaxTips | null>(null);
@@ -299,7 +317,7 @@ export class BankService {
     for (const s of [this.user, this.overview, this.insights, this.taxTips, this.forecast, this.liquidity, this.fx, this.aiStatus, this.error]) {
       (s as WritableSignal<unknown>).set(null);
     }
-    this.budgets.set([]);
+    this.goals.set([]);
   }
 
   private signedIn(u: User): void {
@@ -313,9 +331,8 @@ export class BankService {
     this.http
       .get<AccountOverview>('/api/account/overview')
       .subscribe({ next: (o) => this.overview.set(o), error: () => this.fail() });
-    this.loadBudgets();
-    this.http.get<Forecast>('/api/forecast', { params: { days: 200 } })
-      .subscribe({ next: (f) => this.forecast.set(f), error: () => this.fail() });
+    this.loadGoals();
+    this.loadForecast();
     this.loadAiStatus();
     this.loadInsights(false);
     this.loadTaxTips(false);
@@ -323,24 +340,43 @@ export class BankService {
     this.loadFx(false);
   }
 
-  loadBudgets(): void {
-    this.http.get<Budget[]>('/api/budgets').subscribe({ next: (b) => this.budgets.set(b), error: () => this.fail() });
+  loadForecast(): void {
+    this.http.get<Forecast>('/api/forecast', { params: { days: 200 } })
+      .subscribe({ next: (f) => this.forecast.set(f), error: () => this.fail() });
   }
 
-  budgetOptions(): Observable<BudgetOptions> {
-    return this.http.get<BudgetOptions>('/api/budgets/options');
+  /** Goals change the cash-flow forecast: reload it (and the liquidity outlook) after any goal change. */
+  private goalsChanged = <T>() => tap<T>(() => {
+    this.loadForecast();
+    this.loadLiquidity(90, false, false);
+  });
+
+  updateProfile(body: { name: string; business: string; email: string }): Observable<User> {
+    return this.http.put<User>('/api/auth/me', body).pipe(tap((u) => this.user.set(u)));
   }
 
-  addBudget(body: BudgetCreate): Observable<Budget> {
-    return this.http.post<Budget>('/api/budgets', body);
+  changePassword(current_password: string, new_password: string): Observable<void> {
+    return this.http.post<void>('/api/auth/password', { current_password, new_password });
   }
 
-  updateBudget(id: string, body: BudgetCreate): Observable<Budget> {
-    return this.http.put<Budget>(`/api/budgets/${encodeURIComponent(id)}`, body);
+  loadGoals(): void {
+    this.http.get<Goal[]>('/api/goals').subscribe({ next: (g) => this.goals.set(g), error: () => this.fail() });
   }
 
-  deleteBudget(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/budgets/${encodeURIComponent(id)}`);
+  planGoal(body: { name: string; target: number; saved: number; deadline_months: number | null }): Observable<GoalPlan> {
+    return this.http.post<GoalPlan>('/api/goals/plan', body);
+  }
+
+  addGoal(body: GoalCreate): Observable<Goal> {
+    return this.http.post<Goal>('/api/goals', body).pipe(this.goalsChanged());
+  }
+
+  updateGoal(id: string, body: GoalCreate): Observable<Goal> {
+    return this.http.put<Goal>(`/api/goals/${encodeURIComponent(id)}`, body).pipe(this.goalsChanged());
+  }
+
+  deleteGoal(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/goals/${encodeURIComponent(id)}`).pipe(this.goalsChanged());
   }
 
   transactions(limit: number, offset = 0, category = ''): Observable<TransactionPage> {

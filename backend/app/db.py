@@ -1,4 +1,4 @@
-"""Database: users, login sessions, bank transactions and budgets.
+"""Database: users, login sessions, bank transactions and goals.
 
 SQLite by default (file next to the backend). On OpenShift set DATABASE_URL to PostgreSQL,
 e.g. postgresql+psycopg://user:pass@postgresql:5432/duckbank (add the psycopg driver).
@@ -22,8 +22,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
@@ -79,8 +80,8 @@ class TransactionRow(Base):
     account: Mapped[str] = mapped_column(String(40))
 
 
-class BudgetRow(Base):
-    __tablename__ = "budgets"
+class GoalRow(Base):
+    __tablename__ = "goals"
     __table_args__ = (UniqueConstraint("user_id", "slug"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -88,16 +89,27 @@ class BudgetRow(Base):
     slug: Mapped[str] = mapped_column(String(80))
     name: Mapped[str] = mapped_column(String(60))
     description: Mapped[str] = mapped_column(String(120), default="")
-    category: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    merchants: Mapped[list[str]] = mapped_column(JSON, default=list)
-    limit: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # Preset picture id, or an uploaded picture as a data URL.
+    target: Mapped[float] = mapped_column(Float)
+    saved: Mapped[float] = mapped_column(Float, default=0.0)
+    deadline_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     photo: Mapped[str | None] = mapped_column(Text, nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # The chosen way to reach the goal (JSON of GoalWay), if any.
+    way: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created: Mapped[date] = mapped_column(Date, default=date.today)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
 
 _engine: Engine | None = None
 _factory: sessionmaker[Session] | None = None
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """create_all() never alters existing tables; add columns that newer versions introduced."""
+    existing = {c["name"] for c in inspect(engine).get_columns("goals")}
+    if "icon" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE goals ADD COLUMN icon VARCHAR(30)"))
 
 
 def init_engine(url: str, retries: int = 1, retry_seconds: float = 2.0) -> Engine:
@@ -114,10 +126,7 @@ def init_engine(url: str, retries: int = 1, retry_seconds: float = 2.0) -> Engin
     for attempt in range(1, max(retries, 1) + 1):
         try:
             Base.metadata.create_all(engine)
-            if engine.dialect.name == "postgresql":
-                # Older databases had photo VARCHAR(40); uploaded pictures need more room.
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE budgets ALTER COLUMN photo TYPE TEXT"))
+            _add_missing_columns(engine)
             break
         except OperationalError as exc:
             if attempt >= retries:

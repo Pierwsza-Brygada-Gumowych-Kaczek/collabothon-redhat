@@ -135,6 +135,8 @@ def build_overview(txs: tuple[Transaction, ...], opening_balance: float) -> Acco
     monthly_out: dict[int, float] = defaultdict(float)
     monthly_end: dict[int, float] = {}
     categories: dict[str, float] = defaultdict(float)
+    last = txs[-1].booking_date
+    month_spend: dict[str, float] = defaultdict(float)
 
     daily = daily_balances(txs, opening_balance)
     for t in txs:
@@ -144,6 +146,8 @@ def build_overview(txs: tuple[Transaction, ...], opening_balance: float) -> Acco
         else:
             monthly_out[m] += -t.amount_eur
         categories[t.category] += t.amount_eur
+        if t.amount_eur < 0 and (t.booking_date.year, t.booking_date.month) == (last.year, last.month):
+            month_spend[t.category] += -t.amount_eur
     for d, b in sorted(daily.items()):
         monthly_end[d.month] = b
     balance = daily[max(daily)]
@@ -192,5 +196,9 @@ def build_overview(txs: tuple[Transaction, ...], opening_balance: float) -> Acco
         categories=sorted(
             (CategoryTotal(name=k, amount=round(v, 2)) for k, v in categories.items()),
             key=lambda c: c.amount,
+        ),
+        month_categories=sorted(
+            (CategoryTotal(name=k, amount=round(v, 2)) for k, v in month_spend.items()),
+            key=lambda c: -c.amount,
         ),
     )

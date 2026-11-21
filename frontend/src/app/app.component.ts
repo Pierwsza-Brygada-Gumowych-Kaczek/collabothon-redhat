@@ -1,18 +1,7 @@
-import { AfterViewInit, Component, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, inject, viewChild } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { BankService } from './bank.service';
-
-const THEME_KEY = 'duckbank-theme';
-
-function initialTheme(): 'light' | 'dark' {
-  try {
-    const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'light' || saved === 'dark') return saved;
-  } catch {
-    /* ignore */
-  }
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
+import { ThemeService } from './theme.service';
 
 @Component({
   selector: 'app-root',
@@ -32,32 +21,24 @@ export class AppComponent implements AfterViewInit {
     });
   }
 
-  /** Light / dark theme: saved per browser, defaults to the system setting. */
-  readonly theme = signal<'light' | 'dark'>(initialTheme());
-
-  private readonly applyTheme = effect(() => {
-    const t = this.theme();
-    document.documentElement.dataset['theme'] = t;
-    try {
-      localStorage.setItem(THEME_KEY, t);
-    } catch {
-      /* storage unavailable (private mode) — theme still works for this visit */
-    }
-  });
+  private readonly themes = inject(ThemeService);
+  readonly theme = this.themes.theme;
 
   toggleTheme(): void {
-    this.theme.update((t) => (t === 'dark' ? 'light' : 'dark'));
+    this.themes.toggle();
   }
+
   private readonly duck = viewChild.required<ElementRef<HTMLVideoElement>>('duck');
 
   readonly nav = [
     { path: '/', label: 'Overview', exact: true },
-    { path: '/liquidity', label: 'Liquidity', exact: false },
-    { path: '/investments', label: 'Investments', exact: false },
-    { path: '/tax', label: 'Tax', exact: false },
-    { path: '/fx', label: 'FX hedging', exact: false },
-    { path: '/transactions', label: 'Transactions', exact: false },
     { path: '/analytics', label: 'Analytics', exact: false },
+    { path: '/transactions', label: 'Transactions', exact: false },
+    { path: '/allocation', label: 'Allocation', exact: false },
+    { path: '/liquidity', label: 'Liquidity', exact: false },
+    { path: '/tax', label: 'Tax', exact: false },
+    { path: '/investments', label: 'Investments', exact: false },
+    { path: '/fx', label: 'FX hedging', exact: false },
   ];
 
   ngAfterViewInit(): void {

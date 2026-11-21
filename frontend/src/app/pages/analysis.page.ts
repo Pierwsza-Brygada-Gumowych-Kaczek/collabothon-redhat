@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { BankService } from '../bank.service';
 import { eur, eurShort } from '../format';
@@ -31,7 +31,10 @@ const LEFT = 58; // room for Y-axis labels
         <section class="card">
           <h2>Balance day by day</h2>
           @if (chart(); as c) {
-            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Daily balance chart">
+            <p class="muted hint">Hover the chart to see the balance on any day.</p>
+            <div class="wrap">
+            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Daily balance chart"
+                 (mousemove)="onMove($event)" (mouseleave)="hover.set(null)">
               <defs>
                 <clipPath id="above"><rect x="0" y="0" [attr.width]="W" [attr.height]="c.zeroY" /></clipPath>
                 <clipPath id="below"><rect x="0" [attr.y]="c.zeroY" [attr.width]="W" [attr.height]="H" /></clipPath>
@@ -48,7 +51,22 @@ const LEFT = 58; // room for Y-axis labels
               @for (m of c.months; track m.label) {
                 <text [attr.x]="m.x" [attr.y]="H + 16" class="axis">{{ m.label }}</text>
               }
+              @if (hovered(); as h) {
+                <line [attr.x1]="h.x" [attr.x2]="h.x" [attr.y1]="PAD" [attr.y2]="H - PAD" class="guide" />
+                <circle [attr.cx]="h.x" [attr.cy]="h.y" r="5.5" class="dot-active" [class.low]="h.balance < 0" />
+              }
+              <!-- invisible layer that catches the mouse over the whole plot -->
+              <rect [attr.x]="LEFT" y="0" [attr.width]="W - LEFT" [attr.height]="H" class="catch" />
             </svg>
+            @if (hovered(); as h) {
+              <div class="tip" [style.left.%]="(h.x / W) * 100" [style.top.%]="(h.y / (H + 22)) * 100" [class.flip]="h.x > W * 0.7">
+                <div class="t-period">{{ h.date | date: 'EEE d MMM yyyy' }}</div>
+                <div class="t-row"><span>Balance</span><b [class.neg]="h.balance < 0">{{ eur(h.balance) }}</b></div>
+                <div class="t-row"><span>Change that day</span>
+                  <b [class.pos]="h.change > 0" [class.neg]="h.change < 0">{{ h.change > 0 ? '+' : '' }}{{ eur(h.change) }}</b></div>
+              </div>
+            }
+            </div>
             <p class="note">
               <span class="sw neg-sw"></span> The red area shows when the account was overdrawn. In June the restaurant
               was closed for 3 weeks (no revenue) while costs and the Zurich instalments kept going out.
@@ -59,17 +77,29 @@ const LEFT = 58; // room for Y-axis labels
         <section class="card">
           <h2>Money in and out per month</h2>
           @if (bars(); as bs) {
-            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Monthly income and expenses">
+            <div class="wrap">
+            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Monthly income and expenses"
+                 (mouseleave)="barHover.set(null)">
               @for (b of bs; track b.label) {
-                <rect [attr.x]="b.inX" [attr.y]="H - b.inH" [attr.width]="b.w" [attr.height]="b.inH" class="bar-in">
-                  <title>{{ b.label }}: income {{ eur(b.income) }}</title>
-                </rect>
-                <rect [attr.x]="b.outX" [attr.y]="H - b.outH" [attr.width]="b.w" [attr.height]="b.outH" class="bar-out">
-                  <title>{{ b.label }}: expenses {{ eur(b.expenses) }}</title>
-                </rect>
+                <rect [attr.x]="b.inX" [attr.y]="H - b.inH" [attr.width]="b.w" [attr.height]="b.inH" class="bar-in" />
+                <rect [attr.x]="b.outX" [attr.y]="H - b.outH" [attr.width]="b.w" [attr.height]="b.outH" class="bar-out" />
                 <text [attr.x]="b.x" [attr.y]="H + 16" class="axis center">{{ b.label }}</text>
               }
+              @for (b of bs; track b.label; let i = $index) {
+                <rect [attr.x]="b.slotX" y="0" [attr.width]="b.slotW" [attr.height]="H" class="catch"
+                      [class.on]="barHover() === i" (mouseenter)="barHover.set(i)" />
+              }
             </svg>
+            @if (barHovered(); as b) {
+              <div class="tip" [style.left.%]="(b.x / W) * 100" [style.top.%]="8" [class.flip]="b.x > W * 0.6">
+                <div class="t-period">{{ b.label }}</div>
+                <div class="t-row"><span>Money in</span><b class="pos">+{{ eur(b.income) }}</b></div>
+                <div class="t-row"><span>Money out</span><b class="neg">-{{ eur(b.expenses) }}</b></div>
+                <div class="t-row"><span>Net</span>
+                  <b [class.pos]="b.income >= b.expenses" [class.neg]="b.income < b.expenses">{{ eur(b.income - b.expenses) }}</b></div>
+              </div>
+            }
+            </div>
             <div class="legend"><span class="sw in"></span> money in <span class="sw out"></span> money out</div>
           }
         </section>
@@ -102,6 +132,20 @@ const LEFT = 58; // room for Y-axis labels
     .area-neg { fill: rgba(201, 25, 11, .18); }
     .line { fill: none; stroke: var(--blue); stroke-width: 2; }
     .min-dot { fill: var(--red); }
+    .wrap { position: relative; }
+    .hint { margin: 0 0 .4rem; font-size: .85rem; }
+    .guide { stroke: var(--text); stroke-dasharray: 3 3; opacity: .45; }
+    .dot-active { fill: var(--blue); stroke: var(--surface); stroke-width: 2; }
+    .dot-active.low { fill: var(--red); }
+    .catch { fill: transparent; cursor: crosshair; }
+    .catch.on { fill: rgba(128, 128, 128, .12); }
+    .tip { position: absolute; transform: translate(12px, -50%); background: var(--tip-bg); color: #fff; border-radius: 8px;
+      padding: .5rem .65rem; font-size: .78rem; min-width: 170px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); z-index: 2; }
+    .tip.flip { transform: translate(calc(-100% - 12px), -50%); }
+    .t-period { font-weight: 700; margin-bottom: .3rem; }
+    .t-row { display: flex; justify-content: space-between; gap: 1rem; }
+    .t-row .pos { color: #8fd18a; }
+    .t-row .neg { color: #ff8f86; }
     .note { font-size: .88rem; color: var(--text-2); margin: .6rem 0 0; line-height: 1.5; }
     .bar-in { fill: var(--green); }
     .bar-out { fill: var(--red); opacity: .8; }
@@ -124,6 +168,9 @@ export class AnalysisPage {
   readonly W = W;
   readonly H = H;
   readonly LEFT = LEFT;
+  readonly PAD = PAD;
+  readonly hover = signal<number | null>(null);
+  readonly barHover = signal<number | null>(null);
 
   readonly year = computed(() => this.bank.overview()?.period_from.slice(0, 4) ?? '');
 
@@ -154,7 +201,33 @@ export class AnalysisPage {
       months: o.monthly.map((m) => ({ label: m.label, x: xAt(`${m.month}-01`) })),
       ticks: [max, max / 2, 0, min / 2, min].filter((v, i, a) => a.indexOf(v) === i).map((v) => ({ v, y: y(v) })),
       minPoint: { x: xAt(pts[minIdx].date), y: y(values[minIdx]) },
+      pts: pts.map((p, i) => ({
+        x: xAt(p.date),
+        y: y(p.balance),
+        date: p.date,
+        balance: p.balance,
+        change: i ? p.balance - pts[i - 1].balance : 0,
+      })),
     };
+  });
+
+  /** Map the mouse position to the nearest day of the balance line. */
+  onMove(e: MouseEvent): void {
+    const c = this.chart();
+    if (!c) return;
+    const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    let best = 0;
+    for (let i = 1; i < c.pts.length; i++) {
+      if (Math.abs(c.pts[i].x - x) < Math.abs(c.pts[best].x - x)) best = i;
+    }
+    this.hover.set(best);
+  }
+
+  readonly hovered = computed(() => {
+    const i = this.hover();
+    const c = this.chart();
+    return i === null || !c ? null : (c.pts[i] ?? null);
   });
 
   readonly bars = computed(() => {
@@ -167,6 +240,8 @@ export class AnalysisPage {
     return o.monthly.map((m, i) => ({
       label: m.label,
       x: i * slot + slot / 2,
+      slotX: i * slot,
+      slotW: slot,
       inX: i * slot + slot / 2 - bw - 1,
       outX: i * slot + slot / 2 + 1,
       w: bw,
@@ -175,6 +250,12 @@ export class AnalysisPage {
       income: m.income,
       expenses: m.expenses,
     }));
+  });
+
+  readonly barHovered = computed(() => {
+    const i = this.barHover();
+    const b = this.bars();
+    return i === null || !b ? null : (b[i] ?? null);
   });
 
   readonly expenseCategories = computed(() => {

@@ -106,7 +106,7 @@ const compact = (v: number): string => {
               <div class="t-row"><span>Balance{{ mode() === 'days' ? '' : ' at the end' }}</span><b [class.neg]="h.balanceEnd < 0">{{ eurShort(h.balanceEnd) }}</b></div>
               <div class="t-row"><span>Money in (cards)</span><b class="pos">+{{ eurShort(h.in) }}</b></div>
               @if (h.out < 0) {
-                <div class="t-row"><span>Fixed payments</span><b class="neg">{{ eurShort(h.out) }}</b></div>
+                <div class="t-row"><span>Scheduled payments</span><b class="neg">{{ eurShort(h.out) }}</b></div>
                 <div class="t-lbl">{{ h.labels }}</div>
               }
             </div>

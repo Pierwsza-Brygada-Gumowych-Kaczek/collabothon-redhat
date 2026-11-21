@@ -37,10 +37,10 @@ const HISTORY_DAYS = 60;
           <button [class.on]="days() === d" (click)="setDays(d)">{{ d }} days</button>
         }
       </div>
-      <label class="toggle">
-        <input type="checkbox" [checked]="includeTax()" (change)="toggleTax()" />
-        Include expected tax changes (back-payment and higher prepayments)
-      </label>
+      <button type="button" class="pill-toggle" [class.on]="includeTax()" [attr.aria-pressed]="includeTax()"
+              (click)="toggleTax()" title="Adds the expected tax back-payment and higher prepayments to the forecast">
+        Include expected tax changes
+      </button>
     </section>
 
     @if (bank.liquidity(); as l) {
@@ -59,7 +59,9 @@ const HISTORY_DAYS = 60;
             <p class="summary">{{ l.summary }}</p>
           }
           @if (chart(); as c) {
-            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Balance forecast">
+            <div class="chart-wrap">
+            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Balance forecast"
+                 (mousemove)="onMove($event)" (mouseleave)="hover.set(null)">
               @for (t of c.ticks; track t.v) {
                 <line [attr.x1]="LEFT" [attr.x2]="W" [attr.y1]="t.y" [attr.y2]="t.y" class="grid-line" />
                 <text x="2" [attr.y]="t.y + 4" class="axis">{{ eurShort(t.v) }}</text>
@@ -74,7 +76,27 @@ const HISTORY_DAYS = 60;
               @for (m of c.months; track m.x) {
                 <text [attr.x]="m.x" [attr.y]="H + 16" class="axis">{{ m.label }}</text>
               }
+              @if (hovered(); as h) {
+                <line [attr.x1]="h.x" [attr.x2]="h.x" [attr.y1]="PAD" [attr.y2]="H - PAD" class="guide" />
+                <circle [attr.cx]="h.x" [attr.cy]="h.y" r="5.5" class="dot-active" [class.low]="h.balance < 0" />
+              }
+              <!-- invisible layer that catches the mouse over the whole plot -->
+              <rect [attr.x]="LEFT" y="0" [attr.width]="W - LEFT" [attr.height]="H" class="catch" />
             </svg>
+            @if (hovered(); as h) {
+              <div class="ctip" [style.left.%]="(h.x / W) * 100" [style.top.%]="(h.y / (H + 22)) * 100" [class.flip]="h.x > W * 0.7">
+                <div class="t-period">{{ h.date | date: 'EEE d MMM yyyy' }}</div>
+                <div class="t-row"><span>{{ h.actual ? 'Actual balance' : 'Forecast balance' }}</span>
+                  <b [class.neg]="h.balance < 0">{{ eur(h.balance) }}</b></div>
+                @if (!h.actual) {
+                  <div class="t-row"><span>Likely range</span><b>{{ eurShort(h.low) }} – {{ eurShort(h.high) }}</b></div>
+                }
+                @for (f of h.flows; track $index) {
+                  <div class="t-row"><span>{{ f.label }}</span><b [class.pos]="f.amount > 0" [class.neg]="f.amount < 0">{{ eurShort(f.amount) }}</b></div>
+                }
+              </div>
+            }
+            </div>
             <div class="legend">
               <span class="sw hist-sw"></span> actual
               <span class="sw fc-sw"></span> forecast
@@ -283,6 +305,35 @@ export class LiquidityPage {
       ticks: [max, max / 2, 0, min / 2, min].filter((v, i, a) => a.indexOf(v) === i && Math.abs(v) > 1 || v === 0)
         .map((v) => ({ v, y: y(v) })),
       min: { x: x(low.date), y: y(low.balance) },
+      pts: [
+        ...hist.map((p) => ({ x: x(p.date), y: y(p.balance), date: p.date, balance: p.balance, low: p.balance, high: p.balance, actual: true })),
+        ...fc.map((p) => ({ x: x(p.date), y: y(p.balance), date: p.date, balance: p.balance, low: p.low, high: p.high, actual: false })),
+      ],
     };
+  });
+
+  readonly hover = signal<number | null>(null);
+
+  /** Map the mouse position to the nearest day of the chart (actual or forecast). */
+  onMove(e: MouseEvent): void {
+    const c = this.chart();
+    if (!c) return;
+    const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    let best = 0;
+    for (let i = 1; i < c.pts.length; i++) {
+      if (Math.abs(c.pts[i].x - x) < Math.abs(c.pts[best].x - x)) best = i;
+    }
+    this.hover.set(best);
+  }
+
+  /** The hovered day plus the scheduled payments that fall on it. */
+  readonly hovered = computed(() => {
+    const i = this.hover();
+    const c = this.chart();
+    const p = i === null || !c ? null : (c.pts[i] ?? null);
+    if (!p) return null;
+    const flows = (this.bank.liquidity()?.scheduled ?? []).filter((f) => f.date === p.date);
+    return { ...p, flows };
   });
 }

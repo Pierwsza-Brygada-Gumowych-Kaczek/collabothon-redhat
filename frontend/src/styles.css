@@ -91,9 +91,34 @@ h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
 
 button { padding: .55rem 1.1rem; border: 0; border-radius: 6px; background: var(--btn-bg); color: var(--btn-fg); cursor: pointer; font: inherit; }
 button:disabled { opacity: .5; cursor: default; }
+/* On/off option shown as a pill button (replaces checkboxes). */
+button.pill-toggle { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem 1rem; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-2); font-size: .88rem; font-weight: 600;
+  transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s; }
+button.pill-toggle::before { content: ''; width: .9rem; height: .9rem; border-radius: 50%; border: 2px solid currentColor;
+  box-sizing: border-box; }
+button.pill-toggle:hover { border-color: var(--text-2); color: var(--text); }
+button.pill-toggle.on { background: #ee0000; border-color: #ee0000; color: #fff; box-shadow: 0 2px 8px rgba(238, 0, 0, .3); }
+button.pill-toggle.on::before { content: '\2713'; border: 0; font-size: .85rem; line-height: .9rem; text-align: center; }
+button.pill-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
 button.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border-2); }
 
 select, input { color: var(--text); background: var(--surface); }
+
+/* Hover tooltip shared by the line charts (position it with style.left/top in % of the chart). */
+.chart-wrap { position: relative; }
+.chart-wrap .catch { fill: transparent; cursor: crosshair; }
+.chart-wrap .guide { stroke: var(--text); stroke-dasharray: 3 3; opacity: .45; }
+.chart-wrap .dot-active { fill: var(--blue); stroke: var(--surface); stroke-width: 2; }
+.ctip { position: absolute; transform: translate(12px, -50%); background: var(--tip-bg); color: #fff; border-radius: 8px;
+  padding: .5rem .65rem; font-size: .78rem; min-width: 170px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.25); z-index: 2; }
+.ctip.flip { transform: translate(calc(-100% - 12px), -50%); }
+.ctip .t-period { font-weight: 700; margin-bottom: .3rem; }
+.ctip .t-row { display: flex; justify-content: space-between; gap: 1rem; }
+.ctip .t-row .pos { color: #8fd18a; }
+.ctip .t-row .neg { color: #ff8f86; }
+.ctip .t-lbl { color: #bbb; font-size: .72rem; margin-top: .2rem; max-width: 220px; }
 
 .tx { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .tx td { padding: .55rem .25rem; border-bottom: 1px solid var(--surface-3); vertical-align: top; }

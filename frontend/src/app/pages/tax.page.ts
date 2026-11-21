@@ -75,7 +75,8 @@ const DIFFICULTY = { easy: 1, medium: 2, hard: 3 } as const;
         <section class="card">
           <div class="section-head">
             <h2>Advance tax payment plan</h2>
-            <label class="muted"><input type="checkbox" [checked]="showWage()" (change)="showWage.set(!showWage())" /> show monthly wage tax</label>
+            <button type="button" class="pill-toggle" [class.on]="showWage()" [attr.aria-pressed]="showWage()"
+                    (click)="showWage.set(!showWage())">Show monthly wage tax</button>
           </div>
           <div class="plan-tiles">
             <div><span>Recommended income tax prepayment</span><strong>{{ eurShort(f.recommended_quarterly_prepayment) }}</strong><small>per quarter (now {{ eurShort(f.income_tax_prepaid / 4) }})</small></div>
@@ -102,7 +103,7 @@ const DIFFICULTY = { easy: 1, medium: 2, hard: 3 } as const;
         } @else {
         <section class="card total">
           <span class="muted">You could legally save about</span>
-          <strong>{{ eurShort(totals().min) }} – {{ eurShort(totals().max) }}</strong>
+          <strong><span class="upto">up to</span> {{ eurShort(totals().max) }}</strong>
           <span class="muted">a year if you use all the tips below ({{ tx.tips.length }})</span>
         </section>
 
@@ -118,7 +119,7 @@ const DIFFICULTY = { easy: 1, medium: 2, hard: 3 } as const;
             <div class="tip-facts">
               <div class="tf save">
                 <span>You could save</span>
-                <strong>{{ eurShort(t.saving_min_eur) }} – {{ eurShort(t.saving_max_eur) }}</strong>
+                <strong><span class="upto">up to</span> {{ eurShort(t.saving_max_eur) }}</strong>
                 <small>in tax, per year</small>
               </div>
               <div class="tf">
@@ -172,6 +173,7 @@ const DIFFICULTY = { easy: 1, medium: 2, hard: 3 } as const;
     }
   `,
   styles: `
+    .upto { font-size: .8rem; font-weight: 500; color: var(--muted); margin-right: .2rem; }
     .head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
     .head button { flex-shrink: 0; margin-top: .25rem; }
     .alert-card { display: flex; gap: 1rem; border-left: 5px solid var(--red); }

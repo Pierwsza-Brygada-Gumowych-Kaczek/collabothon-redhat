@@ -2,7 +2,7 @@
   <a routerLink="/" class="brand">
     <video #duck class="logo" src="/duck.mp4" autoplay loop muted playsinline preload="auto"
            disablepictureinpicture aria-hidden="true"></video>
-    DuckBank <span class="tag">Business</span>
+    Duck CFO <span class="tag">Business</span>
   </a>
   @if (bank.session() === 'in' && bank.aiStatus(); as s) {
     <button class="ai-pill" [class.ok]="s.reachable && s.model_found"
@@ -19,11 +19,13 @@
   </button>
   @if (bank.user(); as u) {
     <div class="user">
-      <div class="who">
-        <strong>{{ u.name }}</strong>
-        <small>{{ u.business }} · {{ u.segment }}</small>
-      </div>
-      <div class="avatar" [title]="'Signed in as ' + u.name">{{ u.initials }}</div>
+      <a routerLink="/account" routerLinkActive="active" class="me" title="Account &amp; settings">
+        <div class="who">
+          <strong>{{ u.name }}</strong>
+          <small>{{ u.business }} · {{ u.segment }}</small>
+        </div>
+        <div class="avatar">{{ u.initials }}</div>
+      </a>
       <button class="logout" type="button" (click)="logout()" title="Sign out">Sign out</button>
     </div>
   }

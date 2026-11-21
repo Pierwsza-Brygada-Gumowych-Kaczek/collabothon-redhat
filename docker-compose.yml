@@ -1,7 +1,7 @@
 # Local stack for Docker Desktop:  docker compose up --build   ->  http://localhost:8080  (login: demo / demo)
 #
 #   postgres  - PostgreSQL 16 (Red Hat sclorg image, same as on Kubernetes/OpenShift), data in the
-#               "pgdata" volume, so users, budgets and transactions survive restarts.
+#               "pgdata" volume, so users, goals and transactions survive restarts.
 #   backend   - FastAPI; settings from backend/.env, DATABASE_URL points at the postgres service.
 #   frontend  - Angular build served by nginx, proxies /api to the backend.
 #

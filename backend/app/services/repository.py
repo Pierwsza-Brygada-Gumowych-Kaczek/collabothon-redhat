@@ -1,4 +1,4 @@
-"""Reading and writing a user's data in the database (transactions, budgets) + demo seeding."""
+"""Reading and writing a user's data in the database (transactions, goals) + demo seeding."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.db import BudgetRow, TransactionRow, UserRow
-from app.schemas import BudgetCreate, BudgetDefinition
+from datetime import date
+
+from app.db import GoalRow, TransactionRow, UserRow
+from app.schemas import GoalCreate, GoalDefinition
 from app.services.auth import hash_password
 from app.services.statement import Transaction, parse_csv
 
@@ -50,44 +52,46 @@ def import_transactions(db: Session, user_id: int, txs: tuple[Transaction, ...])
     return len(txs)
 
 
-# --- Budgets ------------------------------------------------------------------------------
+# --- Goals --------------------------------------------------------------------------------
 
 
-def _to_def(r: BudgetRow) -> BudgetDefinition:
-    return BudgetDefinition(id=r.slug, name=r.name, description=r.description, category=r.category,
-                            merchants=list(r.merchants or []), limit=r.limit, photo=r.photo)
+def _goal_def(r: GoalRow) -> GoalDefinition:
+    return GoalDefinition(
+        id=r.slug, name=r.name, description=r.description, target=r.target, saved=r.saved,
+        deadline_months=r.deadline_months, photo=r.photo, icon=r.icon, way=r.way, created=r.created,
+    )
 
 
-def list_budgets(db: Session, user_id: int) -> list[BudgetDefinition]:
-    rows = db.scalars(select(BudgetRow).where(BudgetRow.user_id == user_id).order_by(BudgetRow.position, BudgetRow.id))
-    return [_to_def(r) for r in rows]
+def list_goals(db: Session, user_id: int) -> list[GoalDefinition]:
+    rows = db.scalars(select(GoalRow).where(GoalRow.user_id == user_id).order_by(GoalRow.position, GoalRow.id))
+    return [_goal_def(r) for r in rows]
 
 
-def add_budget(db: Session, user_id: int, body: BudgetCreate, slug: str | None = None) -> BudgetDefinition:
-    base = slug or re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-") or "budget"
-    taken = set(db.scalars(select(BudgetRow.slug).where(BudgetRow.user_id == user_id)))
+def add_goal(db: Session, user_id: int, body: GoalCreate) -> GoalDefinition:
+    base = re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-") or "goal"
+    taken = set(db.scalars(select(GoalRow.slug).where(GoalRow.user_id == user_id)))
     new, n = base, 2
     while new in taken:
         new, n = f"{base}-{n}", n + 1
-    position = (db.scalar(select(func.max(BudgetRow.position)).where(BudgetRow.user_id == user_id)) or 0) + 1
-    row = BudgetRow(user_id=user_id, slug=new, position=position, **body.model_dump())
+    position = (db.scalar(select(func.max(GoalRow.position)).where(GoalRow.user_id == user_id)) or 0) + 1
+    row = GoalRow(user_id=user_id, slug=new, position=position, created=date.today(), **body.model_dump(mode="json"))
     db.add(row)
     db.commit()
-    return _to_def(row)
+    return _goal_def(row)
 
 
-def update_budget(db: Session, user_id: int, slug: str, body: BudgetCreate) -> BudgetDefinition | None:
-    row = db.scalar(select(BudgetRow).where(BudgetRow.user_id == user_id, BudgetRow.slug == slug))
+def update_goal(db: Session, user_id: int, slug: str, body: GoalCreate) -> GoalDefinition | None:
+    row = db.scalar(select(GoalRow).where(GoalRow.user_id == user_id, GoalRow.slug == slug))
     if row is None:
         return None
-    for key, value in body.model_dump().items():
+    for key, value in body.model_dump(mode="json").items():
         setattr(row, key, value)
     db.commit()
-    return _to_def(row)
+    return _goal_def(row)
 
 
-def delete_budget(db: Session, user_id: int, slug: str) -> bool:
-    res = db.execute(delete(BudgetRow).where(BudgetRow.user_id == user_id, BudgetRow.slug == slug))
+def delete_goal(db: Session, user_id: int, slug: str) -> bool:
+    res = db.execute(delete(GoalRow).where(GoalRow.user_id == user_id, GoalRow.slug == slug))
     db.commit()
     return res.rowcount > 0
 
@@ -96,7 +100,7 @@ def delete_budget(db: Session, user_id: int, slug: str) -> bool:
 
 
 def seed_demo_user(db: Session, settings: Settings) -> None:
-    """Create the demo user (demo / demo) with the sample statement and default budgets, once."""
+    """Create the demo user (demo / demo) with the sample statement, once."""
 
     if db.scalar(select(UserRow).where(UserRow.username == settings.demo_username)):
         return
@@ -109,8 +113,6 @@ def seed_demo_user(db: Session, settings: Settings) -> None:
 
 
 def _create_demo_user(db: Session, settings: Settings) -> None:
-    from app.services.budgets import DEFAULTS
-
     user = UserRow(
         username=settings.demo_username,
         password_hash=hash_password(settings.demo_password),
@@ -123,6 +125,4 @@ def _create_demo_user(db: Session, settings: Settings) -> None:
     db.add(user)
     db.commit()
     count = import_transactions(db, user.id, parse_csv(settings.statement_csv_path))
-    for d in DEFAULTS:
-        add_budget(db, user.id, BudgetCreate(**d.model_dump(exclude={"id"})), slug=d.id)
     log.info("Created demo user '%s' with %d transactions", user.username, count)
