@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, WritableSignal, inject, signal } from '@angular/core';
-import { Observable, firstValueFrom, tap } from 'rxjs';
+import { Observable, firstValueFrom, retry, tap } from 'rxjs';
 
 export interface User {
   id: string;
@@ -416,14 +416,15 @@ export class BankService {
     loading: WritableSignal<boolean>,
   ): void {
     loading.set(true);
-    this.http.get<T>(url, { params }).subscribe({
+    // An AI answer can be slow or hit a gateway timeout: try once more, and if it still fails do NOT raise the
+    // page-wide error banner. The agent pages have their own "Run analysis again" button.
+    this.http.get<T>(url, { params }).pipe(retry({ count: 1, delay: 2000 })).subscribe({
       next: (v) => {
         target.set(v);
         loading.set(false);
       },
       error: () => {
         loading.set(false);
-        this.fail();
       },
     });
   }

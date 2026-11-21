@@ -4,14 +4,6 @@
            disablepictureinpicture aria-hidden="true"></video>
     Duck CFO <span class="tag">Business</span>
   </a>
-  @if (bank.session() === 'in' && bank.aiStatus(); as s) {
-    <button class="ai-pill" [class.ok]="s.reachable && s.model_found"
-            [class.demo]="!(s.reachable && s.model_found) && s.demo_fallback" (click)="bank.loadAiStatus()"
-            [title]="s.error || ('Connected to ' + s.url)">
-      <span class="ai-dot"></span>
-      {{ s.reachable && s.model_found ? 'AI connected · ' + s.model : (s.demo_fallback ? 'Demo mode · AI not connected' : 'AI offline') }}
-    </button>
-  }
   <button class="theme-btn" (click)="toggleTheme()"
           [attr.aria-label]="theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
           [title]="theme() === 'dark' ? 'Light theme' : 'Dark theme'">
