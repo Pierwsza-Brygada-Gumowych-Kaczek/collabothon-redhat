@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { BankService } from '../bank.service';
+import { BankService, Analytics, AnalyticsRange } from '../bank.service';
 import { eur, eurShort } from '../format';
 
 const W = 800;
@@ -8,24 +8,41 @@ const H = 220;
 const PAD = 14;
 const LEFT = 58; // room for Y-axis labels
 
+const RANGES: { id: AnalyticsRange; label: string; phrase: string }[] = [
+  { id: 'week', label: 'Last week', phrase: 'the last 7 days' },
+  { id: 'month', label: 'Last month', phrase: 'the last 30 days' },
+  { id: 'year', label: 'Last year', phrase: 'the last 12 months' },
+];
+
 @Component({
   selector: 'app-analysis-page',
   standalone: true,
   imports: [DatePipe],
   template: `
     <h1 class="page-title">Analytics</h1>
-    <p class="page-lead">How the money in your business account changed during {{ year() }}.</p>
+    <p class="page-lead">
+      How the money in your business account changed in {{ phrase() }}
+      @if (data(); as d) { ({{ d.period_from | date: 'd MMM yyyy' }} – {{ d.period_to | date: 'd MMM yyyy' }}) }.
+    </p>
 
-    @if (bank.overview(); as o) {
-      <div class="stack">
+    <div class="range" role="group" aria-label="Period">
+      @for (r of ranges; track r.id) {
+        <button type="button" [class.on]="range() === r.id" [attr.aria-pressed]="range() === r.id" (click)="setRange(r.id)">
+          {{ r.label }}
+        </button>
+      }
+    </div>
+
+    @if (data(); as d) {
+      <div class="stack" [class.loading]="loading()">
         <section class="kpis">
-          <div class="card kpi"><span>Money in this year</span><strong class="pos">{{ eurShort(o.kpis.total_income) }}</strong></div>
-          <div class="card kpi"><span>Money out this year</span><strong class="neg">{{ eurShort(o.kpis.total_expenses) }}</strong></div>
+          <div class="card kpi"><span>Money in</span><strong class="pos">{{ eurShort(d.total_income) }}</strong></div>
+          <div class="card kpi"><span>Money out</span><strong class="neg">{{ eurShort(d.total_expenses) }}</strong></div>
           <div class="card kpi">
-            <span>Lowest balance ({{ o.kpis.min_balance_date | date: 'd MMM' }})</span>
-            <strong class="neg">{{ eurShort(o.kpis.min_balance) }}</strong>
+            <span>Lowest balance ({{ d.min_balance_date | date: 'd MMM' }})</span>
+            <strong [class.neg]="d.min_balance < 0">{{ eurShort(d.min_balance) }}</strong>
           </div>
-          <div class="card kpi"><span>Days in overdraft</span><strong>{{ o.kpis.overdraft_days }}</strong></div>
+          <div class="card kpi"><span>Days in overdraft</span><strong>{{ d.overdraft_days }}</strong></div>
         </section>
 
         <section class="card">
@@ -48,8 +65,8 @@ const LEFT = 58; // room for Y-axis labels
               <line [attr.x1]="LEFT" [attr.x2]="W" [attr.y1]="c.zeroY" [attr.y2]="c.zeroY" class="zero" />
               <path [attr.d]="c.line" class="line" />
               <circle [attr.cx]="c.minPoint.x" [attr.cy]="c.minPoint.y" r="4" class="min-dot" />
-              @for (m of c.months; track m.label) {
-                <text [attr.x]="m.x" [attr.y]="H + 16" class="axis">{{ m.label }}</text>
+              @for (m of c.labels; track m.x) {
+                <text [attr.x]="m.x" [attr.y]="H + 16" class="axis mid">{{ m.label }}</text>
               }
               @if (hovered(); as h) {
                 <line [attr.x1]="h.x" [attr.x2]="h.x" [attr.y1]="PAD" [attr.y2]="H - PAD" class="guide" />
@@ -68,24 +85,28 @@ const LEFT = 58; // room for Y-axis labels
             }
             </div>
             <p class="note">
-              <span class="sw neg-sw"></span> The red area shows when the account was overdrawn. In June the restaurant
-              was closed for 3 weeks (no revenue) while costs and the Zurich instalments kept going out.
+              <span class="sw neg-sw"></span> The red area shows when the account was overdrawn.
+              @if (range() === 'year') {
+                In June the restaurant was closed for 3 weeks (no revenue) while costs and the Zurich instalments kept going out.
+              }
             </p>
           }
         </section>
 
         <section class="card">
-          <h2>Money in and out per month</h2>
+          <h2>{{ range() === 'year' ? 'Money in and out per month' : 'Money in and out per day' }}</h2>
           @if (bars(); as bs) {
             <div class="wrap">
-            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Monthly income and expenses"
+            <svg [attr.viewBox]="'0 0 ' + W + ' ' + (H + 22)" class="chart" role="img" aria-label="Money in and out"
                  (mouseleave)="barHover.set(null)">
-              @for (b of bs; track b.label) {
+              @for (b of bs; track b.key) {
                 <rect [attr.x]="b.inX" [attr.y]="H - b.inH" [attr.width]="b.w" [attr.height]="b.inH" class="bar-in" />
                 <rect [attr.x]="b.outX" [attr.y]="H - b.outH" [attr.width]="b.w" [attr.height]="b.outH" class="bar-out" />
-                <text [attr.x]="b.x" [attr.y]="H + 16" class="axis center">{{ b.label }}</text>
+                @if (b.showLabel) {
+                  <text [attr.x]="b.x" [attr.y]="H + 16" class="axis center">{{ b.label }}</text>
+                }
               }
-              @for (b of bs; track b.label; let i = $index) {
+              @for (b of bs; track b.key; let i = $index) {
                 <rect [attr.x]="b.slotX" y="0" [attr.width]="b.slotW" [attr.height]="H" class="catch"
                       [class.on]="barHover() === i" (mouseenter)="barHover.set(i)" />
               }
@@ -106,19 +127,32 @@ const LEFT = 58; // room for Y-axis labels
 
         <section class="card">
           <h2>Where the money goes</h2>
-          <ul class="cats">
-            @for (c of expenseCategories(); track c.name) {
-              <li>
-                <div class="cat-row"><span>{{ c.name }}</span><span>{{ eurShort(c.amount) }} · {{ c.pct.toFixed(0) }}%</span></div>
-                <div class="track"><div class="fill" [style.width.%]="c.pct"></div></div>
-              </li>
-            }
-          </ul>
+          @if (expenseCategories().length) {
+            <ul class="cats">
+              @for (c of expenseCategories(); track c.name) {
+                <li>
+                  <div class="cat-row"><span>{{ c.name }}</span><span>{{ eurShort(c.amount) }} · {{ c.pct.toFixed(0) }}%</span></div>
+                  <div class="track"><div class="fill" [style.width.%]="c.pct"></div></div>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="muted">No spending in this period.</p>
+          }
         </section>
       </div>
+    } @else {
+      <p class="muted">Loading…</p>
     }
   `,
   styles: `
+    .range { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1rem; }
+    .range button { padding: .45rem 1.1rem; border-radius: 999px; background: var(--surface-3); color: var(--text-2);
+      border: 1px solid var(--border-2); font-weight: 600; font-size: .9rem;
+      transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s; }
+    .range button:hover { border-color: var(--text-2); color: var(--text); }
+    .range button.on { background: #ee0000; border-color: #ee0000; color: #fff; box-shadow: 0 2px 8px rgba(238, 0, 0, .3); }
+    .loading { opacity: .6; transition: opacity .15s; }
     .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
     .kpi { display: flex; flex-direction: column; gap: .3rem; }
     .kpi span { font-size: .8rem; color: var(--muted); }
@@ -127,7 +161,7 @@ const LEFT = 58; // room for Y-axis labels
     .grid-line { stroke: var(--grid); }
     .zero { stroke: var(--axis); stroke-dasharray: 4 4; }
     .axis { font-size: 11px; fill: var(--muted); }
-    .axis.center { text-anchor: middle; }
+    .axis.center, .axis.mid { text-anchor: middle; }
     .area-pos { fill: rgba(0, 102, 204, .12); }
     .area-neg { fill: rgba(201, 25, 11, .18); }
     .line { fill: none; stroke: var(--blue); stroke-width: 2; }
@@ -167,25 +201,55 @@ export class AnalysisPage {
   readonly eurShort = eurShort;
   readonly W = W;
   readonly H = H;
-  readonly LEFT = LEFT;
   readonly PAD = PAD;
+  readonly LEFT = LEFT;
+  readonly ranges = RANGES;
+
+  readonly range = signal<AnalyticsRange>('year');
+  readonly data = signal<Analytics | null>(null);
+  readonly loading = signal(false);
   readonly hover = signal<number | null>(null);
   readonly barHover = signal<number | null>(null);
 
-  readonly year = computed(() => this.bank.overview()?.period_from.slice(0, 4) ?? '');
+  readonly phrase = computed(() => RANGES.find((r) => r.id === this.range())?.phrase ?? '');
+
+  constructor() {
+    this.load('year');
+  }
+
+  setRange(r: AnalyticsRange): void {
+    if (r === this.range()) return;
+    this.range.set(r);
+    this.hover.set(null);
+    this.barHover.set(null);
+    this.load(r);
+  }
+
+  private load(r: AnalyticsRange): void {
+    this.loading.set(true);
+    this.bank.analytics(r).subscribe({
+      next: (a) => {
+        // Ignore a slow answer for a period the user has already left.
+        if (this.range() !== r) return;
+        this.data.set(a);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
+  }
 
   /** Daily balance: line + area above/below zero; X axis by date. */
   readonly chart = computed(() => {
-    const o = this.bank.overview();
-    if (!o) return null;
-    const pts = o.daily_balance;
+    const d = this.data();
+    if (!d || !d.daily_balance.length) return null;
+    const pts = d.daily_balance;
     const values = pts.map((p) => p.balance);
     const max = Math.max(...values, 0);
     const min = Math.min(...values, 0);
     const span = max - min || 1;
     const t0 = Date.parse(pts[0].date);
     const tSpan = Date.parse(pts[pts.length - 1].date) - t0 || 1;
-    const xAt = (d: string) => LEFT + ((Date.parse(d) - t0) / tSpan) * (W - PAD - LEFT);
+    const xAt = (date: string) => LEFT + ((Date.parse(date) - t0) / tSpan) * (W - PAD - LEFT);
     const y = (v: number) => PAD + ((max - v) / span) * (H - 2 * PAD);
     const zeroY = y(0);
 
@@ -194,11 +258,18 @@ export class AnalysisPage {
     const area = `${line}L${xEnd},${zeroY.toFixed(1)}L${LEFT},${zeroY.toFixed(1)}Z`;
 
     const minIdx = values.indexOf(Math.min(...values));
+    const month = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+    const labels =
+      d.range === 'year'
+        ? pts.filter((p) => p.date.endsWith('-01')).map((p) => ({ x: xAt(p.date), label: month(p.date) }))
+        : pts
+            .filter((_, i) => i % Math.ceil(pts.length / 8) === 0)
+            .map((p) => ({ x: xAt(p.date), label: `${+p.date.slice(8)} ${month(p.date)}` }));
     return {
       line,
       area,
       zeroY,
-      months: o.monthly.map((m) => ({ label: m.label, x: xAt(`${m.month}-01`) })),
+      labels,
       ticks: [max, max / 2, 0, min / 2, min].filter((v, i, a) => a.indexOf(v) === i).map((v) => ({ v, y: y(v) })),
       minPoint: { x: xAt(pts[minIdx].date), y: y(values[minIdx]) },
       pts: pts.map((p, i) => ({
@@ -231,24 +302,27 @@ export class AnalysisPage {
   });
 
   readonly bars = computed(() => {
-    const o = this.bank.overview();
-    if (!o) return null;
-    const max = Math.max(...o.monthly.flatMap((m) => [m.income, m.expenses]));
-    const slot = W / o.monthly.length;
+    const d = this.data();
+    if (!d || !d.buckets.length) return null;
+    const max = Math.max(...d.buckets.flatMap((b) => [b.income, b.expenses]), 1);
+    const slot = W / d.buckets.length;
     const bw = slot * 0.32;
     const h = (v: number) => (v / max) * (H - 30);
-    return o.monthly.map((m, i) => ({
-      label: m.label,
+    const every = Math.ceil(d.buckets.length / 12);
+    return d.buckets.map((b, i) => ({
+      key: b.key,
+      label: b.label,
+      showLabel: i % every === 0,
       x: i * slot + slot / 2,
       slotX: i * slot,
       slotW: slot,
       inX: i * slot + slot / 2 - bw - 1,
       outX: i * slot + slot / 2 + 1,
       w: bw,
-      inH: h(m.income),
-      outH: h(m.expenses),
-      income: m.income,
-      expenses: m.expenses,
+      inH: h(b.income),
+      outH: h(b.expenses),
+      income: b.income,
+      expenses: b.expenses,
     }));
   });
 
@@ -259,10 +333,9 @@ export class AnalysisPage {
   });
 
   readonly expenseCategories = computed(() => {
-    const o = this.bank.overview();
-    if (!o) return [];
-    const exp = o.categories.filter((c) => c.amount < 0);
-    const total = exp.reduce((s, c) => s - c.amount, 0);
-    return exp.map((c) => ({ name: c.name, amount: -c.amount, pct: (-c.amount / total) * 100 }));
+    const d = this.data();
+    if (!d) return [];
+    const total = d.categories.reduce((s, c) => s + c.amount, 0) || 1;
+    return d.categories.map((c) => ({ name: c.name, amount: c.amount, pct: (c.amount / total) * 100 }));
   });
 }

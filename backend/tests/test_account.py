@@ -100,6 +100,26 @@ def test_model_auth_error_is_explained():
     assert "OPENSHIFT_AI_TOKEN" in r["error"]
 
 
+@respx.mock
+def test_safety_buffer_is_never_proposed_as_an_investment():
+    content = {"summary": "OK", "proposals": [
+        {"title": "Safety buffer for June", "category": "Reserve", "amount_eur": 10000},
+        {"title": "Emergency fund", "category": "Savings", "amount_eur": 5000},
+        {"title": "Fixed-term deposit", "category": "Fixed-term deposit", "amount_eur": 8000},
+    ]}
+    respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
+    with logged_in(create_app()) as client:
+        r = client.get("/api/insights?refresh=true").json()
+    assert [p["title"] for p in r["proposals"]] == ["Fixed-term deposit"]
+
+
+def test_demo_investments_do_not_include_a_reserve(demo_mode):
+    with logged_in(create_app()) as client:
+        r = client.get("/api/insights?refresh=true").json()
+    assert r["source"] == "demo" and r["proposals"]
+    assert not any("reserve" in f'{p["category"]} {p["title"]}'.lower() for p in r["proposals"])
+
+
 # --- Tax agent ---
 
 
@@ -415,6 +435,29 @@ def test_ways_that_never_reach_the_goal_are_not_proposed():
     compare_to_baseline(req, ways)
     kept = drop_pointless(req, ways)
     assert [w.title for w in kept] == ["ETF plan"]
+
+
+def test_analytics_for_week_month_and_year(plain_app):
+    with logged_in(plain_app) as client:
+        ov = client.get("/api/account/overview").json()
+        year = client.get("/api/analytics?range=year").json()
+        month = client.get("/api/analytics?range=month").json()
+        week = client.get("/api/analytics?range=week").json()
+        assert client.get("/api/analytics?range=decade").status_code == 422
+
+    # The whole year matches the overview.
+    assert year["period_from"] == ov["period_from"] and year["period_to"] == ov["period_to"]
+    assert year["total_income"] == ov["kpis"]["total_income"] and year["total_expenses"] == ov["kpis"]["total_expenses"]
+    assert len(year["buckets"]) == 12 and year["end_balance"] == ov["balance"]
+
+    assert len(week["daily_balance"]) == 7 and len(week["buckets"]) == 7
+    assert len(month["daily_balance"]) == 30 and len(month["buckets"]) == 30
+    for a in (week, month, year):
+        # Balance moves by exactly the money in minus the money out.
+        assert round(a["start_balance"] + a["net"], 2) == a["end_balance"]
+        assert round(sum(c["amount"] for c in a["categories"]), 2) == a["total_expenses"]
+        assert round(sum(b["expenses"] for b in a["buckets"]), 2) == a["total_expenses"]
+    assert week["total_expenses"] < month["total_expenses"] < year["total_expenses"]
 
 
 # --- Login & persistence ---

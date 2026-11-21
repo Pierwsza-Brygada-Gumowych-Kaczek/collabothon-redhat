@@ -256,6 +256,25 @@ export interface Fx extends AgentMeta {
   hedges: HedgeProposal[];
 }
 
+export type AnalyticsRange = 'week' | 'month' | 'year';
+
+export interface Analytics {
+  range: AnalyticsRange;
+  period_from: string;
+  period_to: string;
+  start_balance: number;
+  end_balance: number;
+  total_income: number;
+  total_expenses: number;
+  net: number;
+  min_balance: number;
+  min_balance_date: string;
+  overdraft_days: number;
+  daily_balance: { date: string; balance: number }[];
+  buckets: { key: string; label: string; income: number; expenses: number }[];
+  categories: { name: string; amount: number }[];
+}
+
 export interface AiStatus {
   configured: boolean;
   url: string;
@@ -381,6 +400,11 @@ export class BankService {
 
   deleteGoal(id: string): Observable<void> {
     return this.http.delete<void>(`/api/goals/${encodeURIComponent(id)}`).pipe(this.goalsChanged());
+  }
+
+  /** Money in/out, balance and spending by category for the last week, month (30 days) or year. */
+  analytics(range: AnalyticsRange): Observable<Analytics> {
+    return this.http.get<Analytics>('/api/analytics', { params: { range } });
   }
 
   transactions(limit: number, offset = 0, category = ''): Observable<TransactionPage> {

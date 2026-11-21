@@ -6,11 +6,14 @@ import csv
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.schemas import (
     AccountOverview,
+    Analytics,
+    AnalyticsBucket,
+    AnalyticsRange,
     CategoryTotal,
     DailyBalance,
     Kpis,
@@ -199,6 +202,80 @@ def build_overview(txs: tuple[Transaction, ...], opening_balance: float) -> Acco
         ),
         month_categories=sorted(
             (CategoryTotal(name=k, amount=round(v, 2)) for k, v in month_spend.items()),
+            key=lambda c: -c.amount,
+        ),
+    )
+
+
+# --- Analytics for a period ---------------------------------------------------------------
+
+RANGE_DAYS: dict[str, int] = {"week": 7, "month": 30, "year": 365}
+
+
+def build_analytics(txs: tuple[Transaction, ...], opening_balance: float, range_: AnalyticsRange) -> Analytics:
+    """Money in/out, balance and spending by category for the last week, 30 days or year of the statement."""
+    end = txs[-1].booking_date
+    start = max(end - timedelta(days=RANGE_DAYS[range_] - 1), txs[0].booking_date)
+
+    before = opening_balance + sum(t.amount_eur for t in txs if t.booking_date < start)
+    inside = [t for t in txs if start <= t.booking_date <= end]
+
+    by_day: dict[date, list[float]] = defaultdict(lambda: [0.0, 0.0])  # [income, expenses]
+    spending: dict[str, float] = defaultdict(float)
+    net_by_day: dict[date, float] = defaultdict(float)
+    for t in inside:
+        net_by_day[t.booking_date] += t.amount_eur
+        if t.amount_eur >= 0:
+            by_day[t.booking_date][0] += t.amount_eur
+        else:
+            by_day[t.booking_date][1] += -t.amount_eur
+            spending[t.category] += -t.amount_eur
+
+    daily: list[DailyBalance] = []
+    balance, day = before, start
+    while day <= end:
+        balance += net_by_day.get(day, 0.0)
+        daily.append(DailyBalance(date=day, balance=round(balance, 2)))
+        day += timedelta(days=1)
+
+    if range_ == "year":
+        monthly: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
+        for d, (inc, exp) in by_day.items():
+            m = monthly[f"{d.year}-{d.month:02d}"]
+            m[0] += inc
+            m[1] += exp
+        buckets = [
+            AnalyticsBucket(key=k, label=MONTHS[int(k[5:]) - 1], income=round(v[0], 2), expenses=round(v[1], 2))
+            for k, v in sorted(monthly.items())
+        ]
+    else:
+        buckets = []
+        day = start
+        while day <= end:
+            inc, exp = by_day.get(day, (0.0, 0.0))
+            label = f"{day.day} {MONTHS[day.month - 1]}"
+            buckets.append(AnalyticsBucket(key=day.isoformat(), label=label, income=round(inc, 2), expenses=round(exp, 2)))
+            day += timedelta(days=1)
+
+    low = min(daily, key=lambda p: p.balance)
+    income = sum(v[0] for v in by_day.values())
+    expenses = sum(v[1] for v in by_day.values())
+    return Analytics(
+        range=range_,
+        period_from=start,
+        period_to=end,
+        start_balance=round(before, 2),
+        end_balance=daily[-1].balance,
+        total_income=round(income, 2),
+        total_expenses=round(expenses, 2),
+        net=round(income - expenses, 2),
+        min_balance=low.balance,
+        min_balance_date=low.date,
+        overdraft_days=sum(1 for p in daily if p.balance < 0),
+        daily_balance=daily,
+        buckets=buckets,
+        categories=sorted(
+            (CategoryTotal(name=k, amount=round(v, 2)) for k, v in spending.items()),
             key=lambda c: -c.amount,
         ),
     )

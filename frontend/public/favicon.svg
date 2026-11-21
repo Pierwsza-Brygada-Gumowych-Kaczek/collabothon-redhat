@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Duck CFO">
+  <circle cx="32" cy="32" r="30" fill="#3b82c4" stroke="#f5c242" stroke-width="4"/>
+  <!-- tail -->
+  <path d="M13 38 L5 30 L19 33 Z" fill="#ffd43b"/>
+  <!-- body -->
+  <ellipse cx="30" cy="40" rx="18" ry="13" fill="#ffd43b"/>
+  <!-- head -->
+  <circle cx="42" cy="24" r="11" fill="#ffd43b"/>
+  <!-- wing -->
+  <ellipse cx="27" cy="41" rx="9" ry="6" fill="#fcc419"/>
+  <!-- beak -->
+  <path d="M51 23 L62 27 L51 31 Z" fill="#ff922b"/>
+  <!-- eye -->
+  <circle cx="44.5" cy="21" r="2.2" fill="#1b1f23"/>
+  <circle cx="45.2" cy="20.3" r=".7" fill="#fff"/>
+  <!-- water line -->
+  <path d="M8 54 Q14 50 20 54 T32 54 T44 54 T56 54" fill="none" stroke="#a5d8ff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

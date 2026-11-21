@@ -12,9 +12,11 @@ from app.services.openshift_ai import OpenShiftAIClient
 
 SYSTEM_PROMPT = """You are the investment agent of a bank's AI CFO for small businesses.
 You analyse the cash flows of the client's business account and recommend what to do with
-available liquidity: liquidity reserve, fixed-term deposits, money market funds, long-term
+available liquidity: fixed-term deposits, money market funds, long-term
 savings (ETF) and CAPEX FINANCING (e.g. an investment loan or leasing for equipment instead of
-paying cash). Consider seasonality, fixed costs, taxes and a safety buffer.
+paying cash). Consider seasonality, fixed costs, taxes and keep a safety buffer in mind when sizing amounts.
+NEVER propose the safety buffer / liquidity reserve itself as an investment (no "Reserve", "safety buffer" or
+"emergency fund" proposals): it is not an investment, only a limit on how much can be invested.
 Reply ONLY with valid JSON (no markdown) in this schema:
 {
   "summary": "2-3 simple sentences on the financial situation",
@@ -22,7 +24,7 @@ Reply ONLY with valid JSON (no markdown) in this schema:
     {
       "title": "short action name",
       "kind": "investment | financing",
-      "category": "Reserve | Fixed-term deposit | Money market fund | ETF | Capex financing",
+      "category": "Fixed-term deposit | Money market fund | ETF | Capex financing",
       "amount_eur": 10000,
       "contribution": "one-off | monthly",
       "horizon_months": 6,
@@ -72,6 +74,12 @@ Totals by category (negative = expenses):
 _RISK = {"low": "low", "medium": "medium", "high": "high"}
 
 
+def is_buffer(p: InvestmentProposal) -> bool:
+    """The safety buffer is a limit on investing, never an investment option itself."""
+    text = f"{p.category} {p.title}".lower()
+    return any(w in text for w in ("reserve", "buffer", "emergency fund"))
+
+
 def _normalize(p: dict) -> dict:
     p["kind"] = "financing" if str(p.get("kind", "")).lower().startswith("fin") else "investment"
     p["risk"] = pick(p.get("risk", ""), _RISK, "medium")
@@ -90,6 +98,7 @@ async def generate(
 
     def from_model(data: dict) -> InsightsResponse:
         proposals = [InvestmentProposal(**_normalize(p)) for p in data.get("proposals", []) if isinstance(p, dict)]
+        proposals = [p for p in proposals if not is_buffer(p)]
         if not proposals:
             raise ValueError("the reply contains no proposals")
         return InsightsResponse(

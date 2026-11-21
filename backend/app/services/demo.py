@@ -48,20 +48,6 @@ def insights(ov: AccountOverview) -> InsightsResponse:
 
     proposals = [
         InvestmentProposal(
-            title="Set money aside for the June shutdown",
-            category="Reserve",
-            amount_eur=buffer,
-            horizon_months=6,
-            risk="low",
-            return_min_pct=1.5,
-            return_max_pct=2.5,
-            plain_explanation="A separate savings account. Your money is safe and you can withdraw it any time.",
-            rationale=(
-                f"In 2025 the account fell to {eur(k.min_balance)} after the June closure and stayed "
-                f"negative for {k.overdraft_days} days. This reserve avoids that."
-            ),
-        ),
-        InvestmentProposal(
             title="Fixed-term deposit for the surplus",
             category="Fixed-term deposit",
             amount_eur=round(surplus * 0.6, -2),

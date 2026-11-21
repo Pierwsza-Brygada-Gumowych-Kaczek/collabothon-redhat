@@ -101,6 +101,38 @@ class AccountOverview(BaseModel):
     month_categories: list[CategoryTotal] = []
 
 
+# --- Analytics for a chosen period (last week / month / year of the statement) ---
+
+AnalyticsRange = Literal["week", "month", "year"]
+
+
+class AnalyticsBucket(BaseModel):
+    """Money in and out for one day (week, month) or one calendar month (year)."""
+
+    key: str  # ISO date, or YYYY-MM for months
+    label: str
+    income: float
+    expenses: float
+
+
+class Analytics(BaseModel):
+    range: AnalyticsRange
+    period_from: date
+    period_to: date
+    start_balance: float
+    end_balance: float
+    total_income: float
+    total_expenses: float
+    net: float
+    min_balance: float
+    min_balance_date: date
+    overdraft_days: int
+    daily_balance: list[DailyBalance]
+    buckets: list[AnalyticsBucket]
+    # Spending by category in the period (positive amounts, largest first).
+    categories: list[CategoryTotal]
+
+
 # --- Goals (savings targets with AI-proposed ways to reach them) ---
 
 GoalFrequency = Literal["one-off", "weekly", "monthly", "quarterly"]

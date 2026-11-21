@@ -12,6 +12,8 @@ from app.routers.auth import to_user
 from app.schemas import (
     AccountOverview,
     AiStatus,
+    Analytics,
+    AnalyticsRange,
     Goal,
     GoalCreate,
     GoalPlanRequest,
@@ -26,7 +28,7 @@ from app.schemas import (
 )
 from app.services import fx, goals, insights, liquidity, repository, tax
 from app.services.auth import current_user
-from app.services.statement import Transaction, build_overview, to_out
+from app.services.statement import Transaction, build_analytics, build_overview, to_out
 
 router = APIRouter(prefix="/api", tags=["account"])
 
@@ -70,6 +72,12 @@ def me(user: UserRow = Depends(current_user)) -> User:
 @router.get("/account/overview", response_model=AccountOverview)
 def overview(ov: AccountOverview = Depends(get_overview)) -> AccountOverview:
     return ov
+
+
+@router.get("/analytics", response_model=Analytics)
+def analytics(range: AnalyticsRange = "year", acc: Account = Depends(get_account)) -> Analytics:
+    """Money in/out, balance and spending by category for the last week, month (30 days) or year."""
+    return build_analytics(acc.txs, acc.user.opening_balance, range)
 
 
 @router.get("/account/transactions", response_model=TransactionPage)
