@@ -81,15 +81,15 @@ import { RISK_INFO, eurShort } from '../format';
   styles: `
     .head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
     .head button { flex-shrink: 0; margin-top: .25rem; }
-    .summary { border-top: 4px solid #3e8635; }
+    .summary { border-top: 4px solid var(--green); }
     .summary p { line-height: 1.55; font-size: 1.02rem; margin-top: 0; }
     .totals { display: flex; flex-wrap: wrap; gap: 2rem; }
     .totals div { display: flex; flex-direction: column; }
     .totals strong { font-size: 1.3rem; }
     .howto summary { cursor: pointer; font-weight: 600; }
     .howto ul { margin: .75rem 0 0; padding-left: 1.2rem; line-height: 1.6; font-size: .92rem; }
-    .warn { background: #fdf7e7; }
-    .warn ul { margin: 0; padding-left: 1.2rem; line-height: 1.6; color: #6b3600; }
+    .warn { background: var(--amber-bg); }
+    .warn ul { margin: 0; padding-left: 1.2rem; line-height: 1.6; color: var(--amber-text); }
     @media (max-width: 700px) { .head { flex-direction: column; } }
   `,
 })

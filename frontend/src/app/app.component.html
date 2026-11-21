@@ -12,6 +12,11 @@
       {{ s.reachable && s.model_found ? 'AI connected · ' + s.model : (s.demo_fallback ? 'Demo mode · AI not connected' : 'AI offline') }}
     </button>
   }
+  <button class="theme-btn" (click)="toggleTheme()"
+          [attr.aria-label]="theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+          [title]="theme() === 'dark' ? 'Light theme' : 'Dark theme'">
+    {{ theme() === 'dark' ? '☀' : '☾' }}
+  </button>
   @if (bank.user(); as u) {
     <div class="user">
       <div class="who">

@@ -8,7 +8,11 @@
 .logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid #f5c242; background: #3b82c4; }
 .tag { font-size: .7rem; font-weight: 600; background: #ee0000; padding: .1rem .45rem; border-radius: 4px; }
 .user { display: flex; align-items: center; gap: .75rem; }
-.ai-pill { margin-left: auto; margin-right: 1rem; background: #3a1414; color: #ffb4ab; border: 1px solid #7a2a24;
+.topbar { gap: .5rem; }
+.theme-btn { margin-right: .9rem; width: 36px; height: 36px; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  background: #2a2e33; color: #f5c242; border: 1px solid #3d434a; font-size: 1.05rem; line-height: 1; }
+.theme-btn:hover { background: #353a40; }
+.ai-pill { margin-left: auto; margin-right: .75rem; background: #3a1414; color: #ffb4ab; border: 1px solid #7a2a24;
   border-radius: 999px; padding: .3rem .75rem; font-size: .78rem; display: flex; align-items: center; gap: .4rem; }
 .ai-pill.ok { background: #16301a; color: #a8e0a0; border-color: #2f6b34; }
 .ai-dot { width: 8px; height: 8px; border-radius: 50%; background: #e5534b; }
@@ -24,18 +28,18 @@
 }
 
 .tabs {
-  display: flex; gap: .25rem; padding: 0 1.5rem; background: #fff;
-  border-bottom: 1px solid #e3e3e3; overflow-x: auto;
+  display: flex; gap: .25rem; padding: 0 1.5rem; background: var(--surface);
+  border-bottom: 1px solid var(--border); overflow-x: auto;
 }
 .tabs a {
-  padding: .85rem 1rem; color: #4f5255; text-decoration: none; font-weight: 500;
+  padding: .85rem 1rem; color: var(--text-2); text-decoration: none; font-weight: 500;
   border-bottom: 3px solid transparent; white-space: nowrap;
 }
-.tabs a:hover { color: #151515; }
-.tabs a.active { color: #151515; border-bottom-color: #ee0000; }
+.tabs a:hover { color: var(--text); }
+.tabs a.active { color: var(--text); border-bottom-color: #ee0000; }
 
 main { max-width: 1100px; margin: 1.5rem auto 3rem; padding: 0 1rem; }
-.alert { background: #faeae8; color: #a30000; padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
+.alert { background: var(--red-bg); color: var(--red-text); padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
 
 @media (max-width: 700px) {
   .topbar { padding: .6rem 1rem; }

@@ -23,9 +23,9 @@ import { AgentMeta } from './bank.service';
     }
   `,
   styles: `
-    .src { color: #6a6e73; font-size: .82rem; line-height: 1.5; }
+    .src { color: var(--muted); font-size: .82rem; line-height: 1.5; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f0ab00; margin-right: .2rem; }
-    .dot.ai { background: #3e8635; }
+    .dot.ai { background: var(--green); }
   `,
 })
 export class AgentSourceComponent {

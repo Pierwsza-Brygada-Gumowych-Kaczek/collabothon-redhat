@@ -84,25 +84,25 @@ import { RISK_INFO, duration, eurShort, loanInterest, loanPayment, pct, projecti
     </article>
   `,
   styles: `
-    .proposal { border: 1px solid #e3e3e3; border-left: 5px solid var(--risk); border-radius: 12px;
-      padding: 1.1rem 1.25rem; background: #fff; }
-    .proposal[data-risk='low'] { --risk: #3e8635; --risk-bg: #f3faf2; }
-    .proposal[data-risk='medium'] { --risk: #f0ab00; --risk-bg: #fdf7e7; }
-    .proposal[data-risk='high'] { --risk: #c9190b; --risk-bg: #faeae8; }
-    .proposal.financing { border-left-color: #0066cc; }
+    .proposal { border: 1px solid var(--border); border-left: 5px solid var(--risk); border-radius: 12px;
+      padding: 1.1rem 1.25rem; background: var(--surface); }
+    .proposal[data-risk='low'] { --risk: var(--green); --risk-bg: var(--green-bg); }
+    .proposal[data-risk='medium'] { --risk: #f0ab00; --risk-bg: var(--amber-bg); }
+    .proposal[data-risk='high'] { --risk: var(--red); --risk-bg: var(--red-bg); }
+    .proposal.financing { border-left-color: var(--blue); }
     h3 { font-size: 1.15rem; margin: .35rem 0 .9rem; }
-    .chip { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #6a6e73; }
+    .chip { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
     .facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; }
-    .fact { background: #f7f7f7; border-radius: 10px; padding: .7rem .8rem; display: flex; flex-direction: column; gap: .2rem; }
-    .fact.gain { background: #f3faf2; }
-    .fact.cost { background: #eef5fc; }
-    .q { font-size: .75rem; color: #6a6e73; }
+    .fact { background: var(--surface-2); border-radius: 10px; padding: .7rem .8rem; display: flex; flex-direction: column; gap: .2rem; }
+    .fact.gain { background: var(--green-bg); }
+    .fact.cost { background: var(--blue-bg); }
+    .q { font-size: .75rem; color: var(--muted); }
     .fact strong { font-size: 1.2rem; }
-    .fact.gain strong { color: #3e8635; }
-    .fact.cost strong { color: #0066cc; }
-    small { font-size: .75rem; color: #4f5255; line-height: 1.3; }
+    .fact.gain strong { color: var(--green); }
+    .fact.cost strong { color: var(--blue); }
+    small { font-size: .75rem; color: var(--text-2); line-height: 1.3; }
     .meter { display: flex; align-items: center; gap: 3px; }
-    .meter span { width: 18px; height: 8px; border-radius: 3px; background: #ddd; }
+    .meter span { width: 18px; height: 8px; border-radius: 3px; background: var(--track); }
     .meter span.on { background: var(--risk); }
     .meter b { margin-left: .4rem; font-size: 1.05rem; }
     .explain { margin-top: .9rem; font-size: .9rem; line-height: 1.45; }

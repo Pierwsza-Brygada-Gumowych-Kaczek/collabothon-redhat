@@ -1,14 +1,16 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { BankService, Transaction } from '../bank.service';
+import { BankService, Budget, Transaction } from '../bank.service';
 import { BudgetTileComponent } from '../budget-tile.component';
+import { BudgetFormComponent } from '../budget-form.component';
+import { CashflowChartComponent } from '../cashflow-chart.component';
 import { eur, eurShort } from '../format';
 
 @Component({
   selector: 'app-home-page',
   standalone: true,
-  imports: [DatePipe, RouterLink, BudgetTileComponent],
+  imports: [DatePipe, RouterLink, BudgetTileComponent, BudgetFormComponent, CashflowChartComponent],
   template: `
     @if (bank.overview(); as o) {
       <h1 class="page-title">Good morning, {{ firstName() }}</h1>
@@ -33,6 +35,10 @@ import { eur, eurShort } from '../format';
             </div>
           }
         </section>
+
+        @if (bank.forecast(); as f) {
+          <app-cashflow-chart [flows]="f.scheduled" [forecast]="f.forecast" />
+        }
 
         <section>
           <div class="section-head">
@@ -87,19 +93,29 @@ import { eur, eurShort } from '../format';
           </div>
         </section>
 
-        @if (bank.budgets().length) {
-          <section>
-            <div class="section-head">
-              <h2>Budgets this month</h2>
-              <span class="muted">how much you can still spend</span>
-            </div>
-            <div class="budgets">
-              @for (b of bank.budgets(); track b.id) {
-                <app-budget-tile [budget]="b" />
-              }
-            </div>
-          </section>
-        }
+        <section>
+          <div class="section-head">
+            <h2>Budgets this month</h2>
+            <span class="muted">how much you can still spend</span>
+          </div>
+          @if (adding()) {
+            <app-budget-form (saved)="onBudgetSaved()" (cancel)="adding.set(false)" />
+          }
+          @if (budgetError()) {
+            <p class="budget-err">{{ budgetError() }}</p>
+          }
+          <div class="budgets">
+            @for (b of bank.budgets(); track b.id) {
+              <app-budget-tile [budget]="b" (remove)="removeBudget($event)" />
+            }
+            @if (!adding()) {
+              <button type="button" class="add-tile" (click)="adding.set(true)">
+                <span class="plus">+</span>
+                <span>Add budget</span>
+              </button>
+            }
+          </div>
+        </section>
 
         <section class="card">
           <div class="section-head">
@@ -128,20 +144,27 @@ import { eur, eurShort } from '../format';
     .balance { font-size: 2.6rem; font-weight: 700; margin: .2rem 0; }
     .month { min-width: 260px; display: flex; flex-direction: column; gap: .35rem; }
     .row { display: flex; justify-content: space-between; gap: 2rem; }
-    .row.total { border-top: 1px solid #e3e3e3; padding-top: .35rem; }
+    .row.total { border-top: 1px solid var(--border); padding-top: .35rem; }
     .agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
     .agent { display: flex; flex-direction: column; gap: .35rem; text-decoration: none; color: inherit;
       border-top: 4px solid var(--tone); transition: box-shadow .15s; }
-    .agent:hover { box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+    .agent:hover { box-shadow: 0 3px 10px var(--shadow-strong); }
     .agent[data-tone='blue'] { --tone: #0066cc; }
     .agent[data-tone='green'] { --tone: #3e8635; }
     .agent[data-tone='red'] { --tone: #ee0000; }
     .agent[data-tone='amber'] { --tone: #f0ab00; }
-    .down { color: #c9190b; }
-    .a-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #6a6e73; font-weight: 600; }
+    .down { color: var(--red); }
+    .a-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
     .agent strong { font-size: 1.1rem; }
-    .a-text { font-size: .88rem; color: #4f5255; flex: 1; }
+    .a-text { font-size: .88rem; color: var(--text-2); flex: 1; }
     .budgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1rem; }
+    app-budget-form { display: block; margin-bottom: 1rem; }
+    .add-tile { min-height: 260px; border-radius: 14px; border: 2px dashed var(--border-2); background: transparent;
+      color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .4rem;
+      font-weight: 600; }
+    .add-tile:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-bg); }
+    .plus { font-size: 2.4rem; line-height: 1; font-weight: 300; }
+    .budget-err { color: var(--red); margin: 0 0 .6rem; }
   `,
 })
 export class HomePage {
@@ -159,7 +182,24 @@ export class HomePage {
     () => this.bank.taxTips()?.tips.reduce((s, t) => s + t.saving_max_eur, 0) ?? 0,
   );
 
+  readonly adding = signal(false);
+  readonly budgetError = signal<string | null>(null);
+
   constructor() {
     this.bank.transactions(5).subscribe((p) => this.recent.set(p.items));
+  }
+
+  onBudgetSaved(): void {
+    this.adding.set(false);
+    this.bank.loadBudgets();
+  }
+
+  removeBudget(b: Budget): void {
+    if (!confirm(`Delete the budget "${b.name}"?`)) return;
+    this.budgetError.set(null);
+    this.bank.deleteBudget(b.id).subscribe({
+      next: () => this.bank.budgets.update((list) => list.filter((x) => x.id !== b.id)),
+      error: () => this.budgetError.set(`Could not delete "${b.name}". Please try again.`),
+    });
   }
 }

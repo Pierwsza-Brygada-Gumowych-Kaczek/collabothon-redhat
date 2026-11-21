@@ -56,7 +56,7 @@ const PAGE = 25;
   `,
   styles: `
     .filters { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .5rem; flex-wrap: wrap; }
-    select { margin-left: .4rem; padding: .4rem .5rem; border-radius: 6px; border: 1px solid #c7c7c7; font: inherit; }
+    select { margin-left: .4rem; padding: .4rem .5rem; border-radius: 6px; border: 1px solid var(--border-2); font: inherit; }
     .orig { display: block; }
     .pager { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
   `,

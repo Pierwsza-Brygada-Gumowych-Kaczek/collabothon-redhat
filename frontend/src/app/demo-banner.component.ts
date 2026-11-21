@@ -14,8 +14,8 @@ import { Component } from '@angular/core';
     </div>
   `,
   styles: `
-    .demo { display: flex; gap: .7rem; align-items: flex-start; background: #fdf7e7; border: 1px solid #f4d48b;
-      border-radius: 10px; padding: .7rem .9rem; font-size: .88rem; line-height: 1.45; color: #5c3a00; margin-bottom: 1rem; }
+    .demo { display: flex; gap: .7rem; align-items: flex-start; background: var(--amber-bg); border: 1px solid var(--amber-border);
+      border-radius: 10px; padding: .7rem .9rem; font-size: .88rem; line-height: 1.45; color: var(--amber-text); margin-bottom: 1rem; }
     .tag { background: #f0ab00; color: #151515; font-weight: 800; font-size: .7rem; letter-spacing: .06em;
       border-radius: 4px; padding: .15rem .4rem; flex-shrink: 0; margin-top: .1rem; }
   `,

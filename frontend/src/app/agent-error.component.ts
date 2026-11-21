@@ -16,13 +16,13 @@ import { Component, input, output } from '@angular/core';
     </section>
   `,
   styles: `
-    .ai-error { display: flex; gap: 1rem; background: #faeae8; border: 1px solid #f0b8b3; border-left: 5px solid #c9190b;
+    .ai-error { display: flex; gap: 1rem; background: var(--red-bg); border: 1px solid var(--red-border); border-left: 5px solid var(--red);
       border-radius: 12px; padding: 1rem 1.25rem; }
-    .icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: #c9190b; color: #fff;
+    .icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%; background: var(--red); color: var(--bg);
       display: grid; place-items: center; font-weight: 800; }
-    h2 { color: #a30000; font-size: 1.1rem; margin: .2rem 0 .4rem; }
+    h2 { color: var(--red-text); font-size: 1.1rem; margin: .2rem 0 .4rem; }
     p { margin: .3rem 0; line-height: 1.5; }
-    .detail { font-size: .85rem; color: #6b1f1a; word-break: break-word; }
+    .detail { font-size: .85rem; color: var(--red-text); word-break: break-word; }
     button { margin-top: .5rem; }
   `,
 })

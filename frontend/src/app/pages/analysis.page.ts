@@ -91,28 +91,28 @@ const LEFT = 58; // room for Y-axis labels
   styles: `
     .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
     .kpi { display: flex; flex-direction: column; gap: .3rem; }
-    .kpi span { font-size: .8rem; color: #6a6e73; }
+    .kpi span { font-size: .8rem; color: var(--muted); }
     .kpi strong { font-size: 1.35rem; }
     .chart { width: 100%; height: auto; display: block; }
-    .grid-line { stroke: #eee; }
-    .zero { stroke: #8a8d90; stroke-dasharray: 4 4; }
-    .axis { font-size: 11px; fill: #6a6e73; }
+    .grid-line { stroke: var(--grid); }
+    .zero { stroke: var(--axis); stroke-dasharray: 4 4; }
+    .axis { font-size: 11px; fill: var(--muted); }
     .axis.center { text-anchor: middle; }
     .area-pos { fill: rgba(0, 102, 204, .12); }
     .area-neg { fill: rgba(201, 25, 11, .18); }
-    .line { fill: none; stroke: #0066cc; stroke-width: 2; }
-    .min-dot { fill: #c9190b; }
-    .note { font-size: .88rem; color: #4f5255; margin: .6rem 0 0; line-height: 1.5; }
-    .bar-in { fill: #3e8635; }
-    .bar-out { fill: #c9190b; opacity: .8; }
-    .legend { font-size: .85rem; color: #6a6e73; display: flex; align-items: center; gap: .35rem; }
+    .line { fill: none; stroke: var(--blue); stroke-width: 2; }
+    .min-dot { fill: var(--red); }
+    .note { font-size: .88rem; color: var(--text-2); margin: .6rem 0 0; line-height: 1.5; }
+    .bar-in { fill: var(--green); }
+    .bar-out { fill: var(--red); opacity: .8; }
+    .legend { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: .35rem; }
     .sw { width: 10px; height: 10px; display: inline-block; border-radius: 2px; }
-    .sw.in { background: #3e8635; }
-    .sw.out { background: #c9190b; margin-left: .75rem; }
+    .sw.in { background: var(--green); }
+    .sw.out { background: var(--red); margin-left: .75rem; }
     .neg-sw { background: rgba(201, 25, 11, .35); }
     .cats { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .8rem; }
     .cat-row { display: flex; justify-content: space-between; font-size: .9rem; margin-bottom: .25rem; }
-    .track { background: #f0f0f0; border-radius: 4px; height: 8px; }
+    .track { background: var(--surface-3); border-radius: 4px; height: 8px; }
     .fill { background: #ee0000; height: 100%; border-radius: 4px; }
     @media (max-width: 800px) { .kpis { grid-template-columns: 1fr 1fr; } }
   `,

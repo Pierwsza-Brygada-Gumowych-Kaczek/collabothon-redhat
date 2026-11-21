@@ -64,12 +64,31 @@ export interface Budget {
   id: string;
   name: string;
   description: string;
+  category: string | null;
+  merchants: string[];
+  photo: string | null;
+  custom_limit: boolean;
   limit: number;
   spent: number;
   remaining: number;
   period_start: string;
   reset_date: string;
   reset_in_days: number;
+}
+
+export interface BudgetCreate {
+  name: string;
+  description?: string;
+  category?: string | null;
+  merchants?: string[];
+  limit?: number | null;
+  photo?: string | null;
+}
+
+export interface BudgetOptions {
+  categories: { value: string; suggested_limit: number }[];
+  merchants: { value: string; suggested_limit: number }[];
+  photos: string[];
 }
 
 /** Common header of every AI agent response. */
@@ -149,6 +168,14 @@ export interface TaxTips extends AgentMeta {
   tips: TaxTip[];
 }
 
+/** Calculated balance forecast (no AI) used by the Overview chart. */
+export interface Forecast {
+  as_of: string;
+  days: number;
+  forecast: { date: string; balance: number; low: number; high: number; expected_in: number }[];
+  scheduled: { date: string; label: string; amount: number }[];
+}
+
 export interface CreditFacility {
   title: string;
   product: string;
@@ -166,7 +193,7 @@ export interface Liquidity extends AgentMeta {
   as_of: string;
   days: number;
   opening_balance: number;
-  forecast: { date: string; balance: number; low: number; high: number }[];
+  forecast: { date: string; balance: number; low: number; high: number; expected_in: number }[];
   scheduled: { date: string; label: string; amount: number }[];
   min_balance: number;
   min_balance_date: string;
@@ -234,6 +261,7 @@ export class BankService {
   readonly insightsLoading = signal(false);
   readonly taxTips = signal<TaxTips | null>(null);
   readonly taxLoading = signal(false);
+  readonly forecast = signal<Forecast | null>(null);
   readonly liquidity = signal<Liquidity | null>(null);
   readonly liquidityLoading = signal(false);
   readonly fx = signal<Fx | null>(null);
@@ -247,12 +275,30 @@ export class BankService {
     this.http
       .get<AccountOverview>('/api/account/overview')
       .subscribe({ next: (o) => this.overview.set(o), error: () => this.fail() });
-    this.http.get<Budget[]>('/api/budgets').subscribe({ next: (b) => this.budgets.set(b), error: () => this.fail() });
+    this.loadBudgets();
+    this.http.get<Forecast>('/api/forecast', { params: { days: 200 } })
+      .subscribe({ next: (f) => this.forecast.set(f), error: () => this.fail() });
     this.loadAiStatus();
     this.loadInsights(false);
     this.loadTaxTips(false);
     this.loadLiquidity(90, false, false);
     this.loadFx(false);
+  }
+
+  loadBudgets(): void {
+    this.http.get<Budget[]>('/api/budgets').subscribe({ next: (b) => this.budgets.set(b), error: () => this.fail() });
+  }
+
+  budgetOptions(): Observable<BudgetOptions> {
+    return this.http.get<BudgetOptions>('/api/budgets/options');
+  }
+
+  addBudget(body: BudgetCreate): Observable<Budget> {
+    return this.http.post<Budget>('/api/budgets', body);
+  }
+
+  deleteBudget(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/budgets/${encodeURIComponent(id)}`);
   }
 
   transactions(limit: number, offset = 0, category = ''): Observable<TransactionPage> {
