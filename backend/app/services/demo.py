@@ -25,7 +25,7 @@ from app.schemas import (
     TaxTip,
     TaxTipsResponse,
 )
-from app.services.agent_base import eur
+from app.services.agent_base import eur, worthwhile
 
 ARRANGED_LINE_RATE = (0.08, 0.11)  # indicative arranged credit line rate range
 WORKING_CAPITAL_RATE = (0.06, 0.08)  # indicative short-term loan rate range
@@ -296,7 +296,7 @@ def tax(f: TaxFacts, schedule: list[TaxPayment]) -> TaxTipsResponse:
         ),
         facts=f,
         schedule=schedule,
-        tips=sorted(tips, key=lambda t: -t.saving_max_eur),
+        tips=sorted(worthwhile(tips), key=lambda t: -t.saving_max_eur),
         warnings=warnings,
     )
 

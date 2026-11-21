@@ -134,6 +134,28 @@ def test_tax_tips_from_model():
     assert (t["saving_min_eur"], t["saving_max_eur"], t["difficulty"], t["steps"]) == (2000, 5000, "hard", ["one step"])
 
 
+@respx.mock
+def test_tax_tips_that_save_nothing_are_not_shown():
+    content = {"summary": "OK", "tips": [
+        {"title": "Raise prepayments", "saving_min_eur": 0, "saving_max_eur": 0},
+        {"title": "Tiny", "saving_min_eur": 0, "saving_max_eur": 10},
+        {"title": "Pension contribution", "saving_min_eur": 800, "saving_max_eur": 1500},
+    ]}
+    respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
+    with logged_in(create_app()) as client:
+        r = client.get("/api/tax-tips?refresh=true").json()
+    assert [t["title"] for t in r["tips"]] == ["Pension contribution"]
+
+
+@respx.mock
+def test_tax_reply_with_only_worthless_tips_counts_as_unusable():
+    content = {"summary": "OK", "tips": [{"title": "Raise prepayments", "saving_min_eur": 0, "saving_max_eur": 0}]}
+    respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(content))
+    with logged_in(create_app()) as client:
+        r = client.get("/api/tax-tips?refresh=true").json()
+    assert r["source"] == "unavailable" and r["tips"] == [] and "save money" in r["error"]
+
+
 # --- Liquidity agent ---
 
 
@@ -255,7 +277,9 @@ def test_goal_plan_calculates_duration_and_cost(demo_mode):
         r = client.post("/api/goals/plan", json={"name": "New oven", "target": 6000, "saved": 600})
         assert r.status_code == 200
         plan = r.json()
-        assert plan["source"] == "demo" and len(plan["ways"]) >= 3
+        assert plan["source"] == "demo" and len(plan["ways"]) >= 2
+        # Only ways that reach the goal and differ from plain saving (the standard way) are proposed.
+        assert all(w["months"] is not None and w["category"] != "Savings" for w in plan["ways"])
         for w in plan["ways"]:
             if w["months"] is not None:
                 # What is paid in plus interest and the savings so far reaches the target.
@@ -349,6 +373,48 @@ def test_profile_update_and_password_change():
     with TestClient(app) as client:
         assert client.post("/api/auth/login", json={"username": "demo", "password": "demo"}).status_code == 401
         assert client.post("/api/auth/login", json={"username": "demo", "password": "longenough1"}).status_code == 200
+
+
+def _plan_reply():
+    return {"summary": "OK", "ways": [
+        {"title": "ETF plan", "category": "ETF savings plan", "frequency": "monthly", "amount_eur": 400,
+         "return_min_pct": 4, "return_max_pct": 6, "risk": "medium"},
+        {"title": "Money market fund", "category": "Money market fund", "frequency": "monthly", "amount_eur": 450,
+         "return_min_pct": 2, "return_max_pct": 3},
+    ]}
+
+
+@respx.mock
+def test_goal_plans_are_cached_per_request_and_refresh_regenerates():
+    route = respx.post(f"{MODEL_URL}/chat/completions").mock(return_value=model_reply(_plan_reply()))
+    body = {"name": "New oven", "target": 6000, "saved": 0}
+    with logged_in(create_app()) as client:
+        first = client.post("/api/goals/plan", json=body).json()
+        again = client.post("/api/goals/plan", json=body).json()
+        assert first["source"] == "openshift-ai" and again == first
+        assert route.call_count == 1  # second answer came from the cache
+
+        client.post("/api/goals/plan", json={**body, "target": 7000})  # another goal needs its own answer
+        assert route.call_count == 2
+
+        client.post("/api/goals/plan?refresh=true", json=body)
+        assert route.call_count == 3
+
+
+def test_ways_that_never_reach_the_goal_are_not_proposed():
+    from app.schemas import GoalPlanRequest
+    from app.services.goals import compare_to_baseline, drop_pointless, finalize
+
+    req = GoalPlanRequest(name="Oven", target=50_000, saved=0)
+    raw = [
+        {"title": "Fixed-term deposit", "frequency": "one-off", "amount_eur": 5000, "return_min_pct": 2, "return_max_pct": 3},
+        {"title": "ETF plan", "frequency": "monthly", "amount_eur": 1500, "return_min_pct": 4, "return_max_pct": 6},
+    ]
+    ways = finalize(req, raw)
+    assert any(w.months is None or w.months > 180 for w in ways)  # the deposit alone would take decades
+    compare_to_baseline(req, ways)
+    kept = drop_pointless(req, ways)
+    assert [w.title for w in kept] == ["ETF plan"]
 
 
 # --- Login & persistence ---

@@ -363,8 +363,12 @@ export class BankService {
     this.http.get<Goal[]>('/api/goals').subscribe({ next: (g) => this.goals.set(g), error: () => this.fail() });
   }
 
-  planGoal(body: { name: string; target: number; saved: number; deadline_months: number | null }): Observable<GoalPlan> {
-    return this.http.post<GoalPlan>('/api/goals/plan', body);
+  /** Ways to reach a goal. The server caches identical requests; `refresh` asks the AI for a new answer. */
+  planGoal(
+    body: { name: string; target: number; saved: number; deadline_months: number | null },
+    refresh = false,
+  ): Observable<GoalPlan> {
+    return this.http.post<GoalPlan>('/api/goals/plan', body, { params: refresh ? { refresh: true } : {} });
   }
 
   addGoal(body: GoalCreate): Observable<Goal> {

@@ -319,13 +319,15 @@ export class GoalFormComponent {
     if (!this.canPlan()) return;
     this.planning.set(true);
     this.error.set(null);
+    // Same numbers as the ways already shown = the user wants a different answer; otherwise the cache may reply.
+    const refresh = !!this.plan() && !this.stale();
     this.bank
       .planGoal({
         name: this.name.trim(),
         target: this.target!,
         saved: this.savedSoFar ?? 0,
         deadline_months: this.deadline && this.deadline > 0 ? this.deadline : null,
-      })
+      }, refresh)
       .subscribe({
         next: (p) => {
           this.planning.set(false);

@@ -192,19 +192,25 @@ def compare_to_baseline(req: GoalPlanRequest, ways: list[GoalWay]) -> GoalWay:
     return baseline
 
 
-def drop_plain_saving(req: GoalPlanRequest, ways: list[GoalWay]) -> list[GoalWay]:
-    """Remove ways that are no different from the standard way (regular saving with next to no interest).
+MAX_SENSIBLE_MONTHS = 180  # a goal that takes more than 15 years is not a useful proposal
 
-    The standard way is already shown first, so a "savings account" that is neither faster nor earns a
-    noticeable amount would only repeat it.
+
+def drop_pointless(req: GoalPlanRequest, ways: list[GoalWay]) -> list[GoalWay]:
+    """Keep only ways that make sense for the goal.
+
+    - never reaching the goal (e.g. a EUR 5,000 deposit for a EUR 50,000 goal) or taking more than 15 years: dropped,
+    - no different from the standard way (regular saving with next to no interest): dropped, because the
+      standard way is already shown first.
     """
+    reachable = [w for w in ways if w.months is not None and w.months <= MAX_SENSIBLE_MONTHS]
+    candidates = reachable or ways
     remaining = max(req.target - req.saved, 0.0)
     kept = [
-        w for w in ways
+        w for w in candidates
         if w.frequency == "one-off" or w.months is None or (w.months_faster or 0) > 0
         or w.expected_interest >= 0.01 * remaining
     ]
-    return kept or ways
+    return kept or candidates
 
 
 # --- Context & demo ------------------------------------------------------------------------
@@ -274,7 +280,7 @@ async def plan(
         return GoalPlanResponse(
             source=source, model=ai.model, generated_at=datetime.now(timezone.utc),
             summary=summary, warnings=warnings or [], error=error,
-            ways=drop_plain_saving(req, ways), baseline=baseline,
+            ways=drop_pointless(req, ways), baseline=baseline,
         )
 
     def from_model(data: dict) -> GoalPlanResponse:

@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from app.schemas import TaxFacts, TaxPayment, TaxTip, TaxTipsResponse
-from app.services.agent_base import AgentUnavailable, eur, num, pick, run_agent, str_list
+from app.services.agent_base import AgentUnavailable, eur, num, pick, run_agent, str_list, worthwhile
 from app.services import demo
 from app.services.openshift_ai import OpenShiftAIClient
 from app.services.statement import CAT_SWISS, Transaction
@@ -142,6 +142,11 @@ SYSTEM_PROMPT = """You are the tax agent of a bank's AI CFO. The client is a sol
 (2) list LEGAL ways to reduce taxes (income tax, trade tax, payroll costs), plus warnings.
 Do not invent laws; if unsure, leave the tip out. Savings are a cautious estimate at the given
 marginal rate.
+Every tip MUST save real money: saving_max_eur must be a concrete positive amount of at least
+EUR 100, calculated from the figures you are given. Never list a tip that saves EUR 0 or only
+"avoids a surprise". Advice that does not lower the tax bill itself (for example adjusting
+prepayments, setting money aside for the back-payment, filing on time) belongs in "summary" or
+"warnings", NOT in "tips". If you cannot name a saving, leave the tip out.
 Reply ONLY with valid JSON (no markdown) in this schema:
 {
   "summary": "2-3 simple sentences on the tax situation and what to do about prepayments",
@@ -208,9 +213,9 @@ async def generate(
     schedule = build_schedule(txs, f)
 
     def from_model(data: dict) -> TaxTipsResponse:
-        tips = [TaxTip(**_normalize(t)) for t in data.get("tips", []) if isinstance(t, dict)]
+        tips = worthwhile([TaxTip(**_normalize(t)) for t in data.get("tips", []) if isinstance(t, dict)])
         if not tips:
-            raise ValueError("the reply contains no tips")
+            raise ValueError("the reply contains no tips that save money")
         return TaxTipsResponse(
             source="openshift-ai",
             model=ai.model,

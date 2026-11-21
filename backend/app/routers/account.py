@@ -96,6 +96,7 @@ def balance_forecast(
     return ForecastResponse(as_of=acc.txs[-1].booking_date, days=days, forecast=points, scheduled=flows)
 
 
+MAX_CACHED_PLANS = 40  # goal plans kept per user
 MAX_PHOTO_CHARS = 1_500_000  # ~1 MB picture as a base64 data URL
 _PHOTO_URL = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$")
 
@@ -120,15 +121,29 @@ def list_goals(user: UserRow = Depends(current_user), db: Session = Depends(get_
 async def plan_goal(
     body: GoalPlanRequest,
     request: Request,
+    refresh: bool = False,
     acc: Account = Depends(get_account),
     ov: AccountOverview = Depends(get_overview),
     settings: Settings = Depends(get_settings),
 ) -> GoalPlanResponse:
-    """Ways to reach a goal: monthly saving, deposits, funds… with duration and cost calculated."""
+    """Ways to reach a goal: monthly saving, deposits, funds… with duration and cost calculated.
+
+    The same request (name, target, saved, deadline) is answered from the cache, so switching between ways
+    or reopening a goal does not ask the model again. `refresh=true` generates a new answer.
+    """
     body.name = body.name.strip()
     if not body.name:
         raise HTTPException(422, "Give the goal a name.")
-    return await goals.plan(request.app.state.ai, body, ov, acc.user.business, settings.agents_demo_fallback)
+    cache = _cache(request, acc.user.id)
+    key = f"goal:{body.name.lower()}:{body.target:g}:{body.saved:g}:{body.deadline_months or 0}"
+    if not refresh and key in cache:
+        return cache[key]
+    result = await goals.plan(request.app.state.ai, body, ov, acc.user.business, settings.agents_demo_fallback)
+    # Keep the cache small: the oldest plans go first.
+    plans = [k for k in cache if k.startswith("goal:")]
+    for old in plans[: max(len(plans) - MAX_CACHED_PLANS + 1, 0)]:
+        del cache[old]
+    return _remember(cache, key, result)
 
 
 def _forget_liquidity(request: Request, user_id: int) -> None:

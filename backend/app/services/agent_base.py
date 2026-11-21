@@ -19,7 +19,7 @@ from typing import TypeVar
 
 from pydantic import ValidationError
 
-from app.schemas import Message
+from app.schemas import Message, TaxTip
 from app.services.openshift_ai import OpenShiftAIClient, OpenShiftAIError
 
 log = logging.getLogger(__name__)
@@ -43,6 +43,15 @@ def extract_json(text: str) -> dict:
     if start == -1 or end == -1:
         raise ValueError("no JSON object in the reply")
     return json.loads(text[start : end + 1])
+
+
+# A tax tip that saves less than this is noise ("up to EUR 0") and is not shown.
+MIN_SAVING_EUR = 50
+
+
+def worthwhile(tips: list[TaxTip]) -> list[TaxTip]:
+    """Only tips that actually save money."""
+    return [t for t in tips if t.saving_max_eur >= MIN_SAVING_EUR]
 
 
 def num(v: object, default: float = 0.0) -> float:
