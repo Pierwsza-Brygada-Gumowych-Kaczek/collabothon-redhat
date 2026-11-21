@@ -30,7 +30,9 @@ class OpenShiftAIClient:
             base_url=self._url or "http://unconfigured.invalid",
             headers=headers,
             verify=verify,
-            timeout=settings.openshift_ai_timeout,
+            # Short connect timeout: an unreachable model falls back to demo content within seconds,
+            # while a reachable one still gets the full time to answer.
+            timeout=httpx.Timeout(settings.openshift_ai_timeout, connect=min(5.0, settings.openshift_ai_timeout)),
         )
 
     @property
